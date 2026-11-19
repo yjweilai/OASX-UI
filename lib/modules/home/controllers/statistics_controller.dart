@@ -7,6 +7,7 @@ import 'package:oasx/api/sse_client.dart';
 import 'package:oasx/modules/home/controllers/dashboard_controller.dart';
 import 'package:oasx/modules/home/models/home_workbench_layout.dart';
 import 'package:oasx/modules/home/models/script_statistics_models.dart';
+import 'package:oasx/service/local_statistics_service.dart';
 import 'package:oasx/utils/platform_utils.dart';
 
 /// Drives statistics state for the active script workbench.
@@ -23,6 +24,9 @@ class HomeStatisticsController extends GetxController {
 
   /// Whether the backend reported 404 (no stats records or unsupported API).
   final isNotFound = false.obs;
+
+  /// Whether statistics are currently served by the local WebSocket tracker.
+  final isLocalFallback = false.obs;
 
   /// Whether the available dates list is loading.
   final datesLoading = false.obs;
@@ -63,6 +67,9 @@ class HomeStatisticsController extends GetxController {
   /// Worker that keeps the controller bound to dashboard context.
   Worker? _dashboardWorker;
 
+  /// Worker that refreshes local fallback snapshots as WebSocket events arrive.
+  Worker? _localStatsWorker;
+
   /// Active SSE service, only present when today is selected.
   ApiSseClient? _streamService;
 
@@ -93,6 +100,11 @@ class HomeStatisticsController extends GetxController {
   /// Sequential queue that preserves SSE event ordering during async parsing.
   Future<void> _streamEventQueue = Future<void>.value();
 
+  LocalStatisticsService? get _localStats =>
+      Get.isRegistered<LocalStatisticsService>()
+          ? Get.find<LocalStatisticsService>()
+          : null;
+
   @override
   void onInit() {
     _dashboardWorker = everAll([
@@ -103,6 +115,14 @@ class HomeStatisticsController extends GetxController {
     ], (_) {
       unawaited(syncStatisticsBinding());
     });
+    final local = _localStats;
+    if (local != null) {
+      _localStatsWorker = ever(local.revision, (_) {
+        if (isLocalFallback.value && _boundScriptName.isNotEmpty) {
+          _applyLocalStatistics(_boundScriptName, keepDate: true);
+        }
+      });
+    }
     unawaited(syncStatisticsBinding());
     super.onInit();
   }
@@ -111,6 +131,8 @@ class HomeStatisticsController extends GetxController {
   void onClose() {
     _dashboardWorker?.dispose();
     _dashboardWorker = null;
+    _localStatsWorker?.dispose();
+    _localStatsWorker = null;
     unawaited(_stopStream());
     super.onClose();
   }
@@ -144,7 +166,7 @@ class HomeStatisticsController extends GetxController {
     final sortField = historySortField.value;
     final descending = historySortDescending.value;
     final cacheKey =
-        '${currentStatistics.dateKey}|${currentStatistics.totalRuntimeSeconds}|${metric.name}|${sortField.name}|$descending';
+        '${currentStatistics.dateKey}|${currentStatistics.totalRuntimeSeconds}|${currentStatistics.totalTaskRunCount}|${currentStatistics.totalBattleCount}|${metric.name}|${sortField.name}|$descending';
     if (_taskEntriesCacheKey == cacheKey) {
       return _taskEntriesCache;
     }
@@ -211,10 +233,25 @@ class HomeStatisticsController extends GetxController {
       return;
     }
     if (_boundScriptName == scriptName &&
-        (availableDateKeys.isNotEmpty || isNotFound.value)) {
+        (availableDateKeys.isNotEmpty ||
+            isNotFound.value ||
+            isLocalFallback.value)) {
       return;
     }
     await _bootstrapForScript(scriptName);
+  }
+
+
+  /// Clears locally tracked statistics for the currently active script.
+  void clearLocalStatistics() {
+    final scriptName = dashboardController.activeScriptName.value.trim();
+    if (scriptName.isEmpty) {
+      return;
+    }
+    _localStats?.clearScriptStatistics(scriptName);
+    if (isLocalFallback.value) {
+      _applyLocalStatistics(scriptName, keepDate: false);
+    }
   }
 
   /// Forces a clean reload of statistics for the currently active script.
@@ -234,6 +271,10 @@ class HomeStatisticsController extends GetxController {
       return;
     }
     selectedDateKey.value = dateKey;
+    if (isLocalFallback.value) {
+      _applyLocalStatistics(_boundScriptName, keepDate: true);
+      return;
+    }
     unawaited(_loadSelectedDate(_boundScriptName, dateKey));
   }
 
@@ -288,6 +329,7 @@ class HomeStatisticsController extends GetxController {
     connectionState.value = ScriptStatisticsConnectionState.idle;
     lastErrorMessage.value = '';
     isNotFound.value = false;
+    isLocalFallback.value = false;
     try {
       final dateList = await ApiClient().getScriptStatisticsDates(scriptName);
       if (!_isBindingActive(bindingRevision, scriptName)) {
@@ -296,8 +338,7 @@ class HomeStatisticsController extends GetxController {
       availableDateKeys.assignAll(dateList.dates);
       datesLoading.value = false;
       if (availableDateKeys.isEmpty) {
-        selectedDateKey.value = '';
-        statistics.value = null;
+        _activateLocalFallback(scriptName);
         return;
       }
       selectedDateKey.value = availableDateKeys.first;
@@ -306,7 +347,6 @@ class HomeStatisticsController extends GetxController {
       if (!_isBindingActive(bindingRevision, scriptName)) {
         return;
       }
-      // Fallback: some backend builds expose `/stats/{script}?date=...` without `/dates`.
       final todayKey = DateFormat('yyyy-MM-dd').format(DateTime.now());
       try {
         final todayStats =
@@ -316,6 +356,7 @@ class HomeStatisticsController extends GetxController {
         }
         datesLoading.value = false;
         isNotFound.value = false;
+        isLocalFallback.value = false;
         availableDateKeys.assignAll([todayKey]);
         selectedDateKey.value = todayKey;
         statistics.value = todayStats;
@@ -326,21 +367,13 @@ class HomeStatisticsController extends GetxController {
           return;
         }
         datesLoading.value = false;
-        isNotFound.value = true;
-        availableDateKeys.clear();
-        selectedDateKey.value = '';
-        statistics.value = null;
-        lastErrorMessage.value = '';
+        _activateLocalFallback(scriptName);
       } catch (error) {
         if (!_isBindingActive(bindingRevision, scriptName)) {
           return;
         }
         datesLoading.value = false;
-        isNotFound.value = false;
-        availableDateKeys.clear();
-        selectedDateKey.value = '';
-        statistics.value = null;
-        lastErrorMessage.value = error.toString();
+        _activateLocalFallback(scriptName);
       }
     } catch (error) {
       if (!_isBindingActive(bindingRevision, scriptName)) {
@@ -348,11 +381,54 @@ class HomeStatisticsController extends GetxController {
       }
       datesLoading.value = false;
       isNotFound.value = false;
+      isLocalFallback.value = false;
       availableDateKeys.clear();
       selectedDateKey.value = '';
       statistics.value = null;
       lastErrorMessage.value = error.toString();
     }
+  }
+
+  /// Switches seamlessly to built-in local WebSocket statistics tracking.
+  void _activateLocalFallback(String scriptName) {
+    final local = _localStats;
+    if (local == null) {
+      isNotFound.value = true;
+      isLocalFallback.value = false;
+      availableDateKeys.clear();
+      selectedDateKey.value = '';
+      statistics.value = null;
+      lastErrorMessage.value = '';
+      return;
+    }
+    isNotFound.value = false;
+    isLocalFallback.value = true;
+    lastErrorMessage.value = '';
+    connectionState.value = ScriptStatisticsConnectionState.connected;
+    _applyLocalStatistics(scriptName, keepDate: false);
+  }
+
+  void _applyLocalStatistics(String scriptName, {required bool keepDate}) {
+    final local = _localStats;
+    if (local == null) {
+      return;
+    }
+    final dates = local.getAvailableDates(scriptName);
+    availableDateKeys.assignAll(dates);
+    if (dates.isEmpty) {
+      selectedDateKey.value = '';
+      statistics.value = null;
+      return;
+    }
+    if (!keepDate || !dates.contains(selectedDateKey.value)) {
+      selectedDateKey.value = dates.first;
+    }
+    statistics.value = local.getDayStatistics(
+      scriptName,
+      selectedDateKey.value,
+    );
+    _clearDerivedCaches();
+    _syncSelections();
   }
 
   /// Loads the currently selected date using either SSE or one-shot HTTP.
@@ -392,9 +468,7 @@ class HomeStatisticsController extends GetxController {
         return;
       }
       statisticsLoading.value = false;
-      statistics.value = null;
-      isNotFound.value = true;
-      lastErrorMessage.value = '';
+      _activateLocalFallback(scriptName);
     } catch (error) {
       if (!_isStatsRequestActive(statsRevision, scriptName, dateKey)) {
         return;
@@ -450,6 +524,7 @@ class HomeStatisticsController extends GetxController {
     connectionState.value = ScriptStatisticsConnectionState.idle;
     lastErrorMessage.value = '';
     isNotFound.value = false;
+    isLocalFallback.value = false;
     availableDateKeys.clear();
     statistics.value = null;
     latestUpdatedTaskName.value = '';
@@ -540,6 +615,7 @@ class HomeStatisticsController extends GetxController {
           }
           statistics.value = day;
           isNotFound.value = false;
+          isLocalFallback.value = false;
           latestUpdatedTaskName.value = '';
           _clearDerivedCaches();
           _syncSelections();

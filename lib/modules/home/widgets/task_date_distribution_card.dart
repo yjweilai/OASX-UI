@@ -37,16 +37,25 @@ class TaskDateDistributionCard extends StatelessWidget {
           void countTimeText(String raw) {
             final parsed = parseTaskNextRunDate(raw, now: now);
             if (parsed == null) {
+              counts[0]++;
+              totalInWindow++;
               return;
             }
             final taskDay = DateTime(parsed.year, parsed.month, parsed.day);
             final diff = taskDay.difference(today).inDays;
-            if (diff >= 0 && diff < 8) {
+            if (diff <= 0) {
+              counts[0]++;
+              totalInWindow++;
+            } else if (diff < 8) {
               counts[diff]++;
               totalInWindow++;
             }
           }
 
+          if (scriptModel.runningTask.value.taskName.value.trim().isNotEmpty) {
+            counts[0]++;
+            totalInWindow++;
+          }
           for (final item in scriptModel.pendingTaskList) {
             if (item.taskName.value.trim().isNotEmpty) {
               countTimeText(item.nextRun.value);

@@ -607,43 +607,30 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                   ),
                 ),
                 const Spacer(),
-                SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    iconSize: 18,
-                    tooltip: '仅看运行中任务',
-                    color: _taskTypeFilter == TaskStatusType.running
-                        ? scheme.primary
-                        : null,
-                    onPressed: () => setState(() {
-                      _taskTypeFilter =
-                          _taskTypeFilter == TaskStatusType.running
-                              ? null
-                              : TaskStatusType.running;
-                    }),
-                    icon: const Icon(Icons.bolt_rounded),
-                  ),
+                _TaskFilterToggleButton(
+                  icon: Icons.bolt_rounded,
+                  tooltip: '仅看运行中任务',
+                  selected: _taskTypeFilter == TaskStatusType.running,
+                  accentColor: const Color(0xFF16A34A),
+                  onTap: () => setState(() {
+                    _taskTypeFilter =
+                        _taskTypeFilter == TaskStatusType.running
+                            ? null
+                            : TaskStatusType.running;
+                  }),
                 ),
-                SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    iconSize: 18,
-                    tooltip: '仅看等待中任务',
-                    color: _taskTypeFilter == TaskStatusType.waiting
-                        ? scheme.primary
-                        : null,
-                    onPressed: () => setState(() {
-                      _taskTypeFilter =
-                          _taskTypeFilter == TaskStatusType.waiting
-                              ? null
-                              : TaskStatusType.waiting;
-                    }),
-                    icon: const Icon(Icons.schedule_rounded),
-                  ),
+                const SizedBox(width: 6),
+                _TaskFilterToggleButton(
+                  icon: Icons.schedule_rounded,
+                  tooltip: '仅看等待中任务',
+                  selected: _taskTypeFilter == TaskStatusType.waiting,
+                  accentColor: scheme.primary,
+                  onTap: () => setState(() {
+                    _taskTypeFilter =
+                        _taskTypeFilter == TaskStatusType.waiting
+                            ? null
+                            : TaskStatusType.waiting;
+                  }),
                 ),
               ],
             ),
@@ -812,9 +799,13 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                           (statsController?.datesLoading.value ?? false) ||
                               (statsController?.statisticsLoading.value ??
                                   false);
+                      final isLocal =
+                          statsController?.isLocalFallback.value ?? false;
                       final subtitle = loading
                           ? I18n.homeStatsLoadingMessage.tr
-                          : (dateKey.isNotEmpty ? '统计日期：$dateKey' : '统计概览与明细');
+                          : (dateKey.isNotEmpty
+                              ? '统计日期：$dateKey${isLocal ? ' · 本地统计' : ''}'
+                              : '统计概览与明细');
                       return Text(
                         subtitle,
                         maxLines: 1,
@@ -825,6 +816,29 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                       );
                     }),
                   ),
+                  Obx(() {
+                    final isLocal =
+                        statsController?.isLocalFallback.value ?? false;
+                    if (!isLocal || statsController == null) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                        ),
+                        onPressed: () =>
+                            _confirmClearLocalStats(context, statsController),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                        label: const Text('清空本地统计'),
+                      ),
+                    );
+                  }),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
@@ -949,6 +963,33 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
         ],
       ),
     );
+  }
+
+
+  Future<void> _confirmClearLocalStats(
+    BuildContext context,
+    HomeStatisticsController statsController,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清空本地统计'),
+        content: const Text('确定要清空当前配置的全部本地统计记录吗？此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(I18n.cancel.tr),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(I18n.confirm.tr),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      statsController.clearLocalStatistics();
+    }
   }
 
   String _formatCompactDuration(double seconds) {
@@ -1155,6 +1196,73 @@ class _SegmentButton extends StatelessWidget {
           style: theme.textTheme.labelMedium?.copyWith(
             fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
             color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TaskFilterToggleButton extends StatelessWidget {
+  const _TaskFilterToggleButton({
+    required this.icon,
+    required this.tooltip,
+    required this.selected,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool selected;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Tooltip(
+      message: tooltip,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: selected
+              ? accentColor.withValues(alpha: isDark ? 0.28 : 0.16)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected
+                ? accentColor.withValues(alpha: 0.55)
+                : Colors.transparent,
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: isDark ? 0.42 : 0.32),
+                    blurRadius: 8,
+                    spreadRadius: 0.5,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : const [],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Icon(
+              icon,
+              size: 18,
+              color: selected ? accentColor : scheme.onSurfaceVariant,
+            ),
           ),
         ),
       ),

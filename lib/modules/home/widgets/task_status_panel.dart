@@ -200,19 +200,25 @@ class _TaskStatusPanelState extends State<TaskStatusPanel> {
     if (filterDay == null) {
       return true;
     }
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isFilteringToday = filterDay.year == today.year &&
+        filterDay.month == today.month &&
+        filterDay.day == today.day;
     if (task.type == TaskStatusType.running) {
-      final now = DateTime.now();
-      return filterDay.year == now.year &&
-          filterDay.month == now.month &&
-          filterDay.day == now.day;
+      return isFilteringToday;
     }
-    final parsed = parseTaskNextRunDate(task.timeText);
+    final parsed = parseTaskNextRunDate(task.timeText, now: now);
     if (parsed == null) {
-      return false;
+      return isFilteringToday;
     }
-    return parsed.year == filterDay.year &&
-        parsed.month == filterDay.month &&
-        parsed.day == filterDay.day;
+    final taskDay = DateTime(parsed.year, parsed.month, parsed.day);
+    if (taskDay.isBefore(today)) {
+      return isFilteringToday;
+    }
+    return taskDay.year == filterDay.year &&
+        taskDay.month == filterDay.month &&
+        taskDay.day == filterDay.day;
   }
 
   /// Requests disabling one overview task across the current linker scope.

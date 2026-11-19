@@ -18,7 +18,13 @@ extension ScriptServiceWsX on ScriptService {
       listener: (mg) => wsListener(mg, name),
     );
     client.status.listen(
-      (wsStatus) => scriptModelMap[name]?.update(state: wsStatus.scriptState),
+      (wsStatus) {
+        final nextState = wsStatus.scriptState;
+        scriptModelMap[name]?.update(state: nextState);
+        if (Get.isRegistered<LocalStatisticsService>()) {
+          Get.find<LocalStatisticsService>().recordState(name, nextState);
+        }
+      },
     );
   }
 
@@ -34,6 +40,10 @@ extension ScriptServiceWsX on ScriptService {
       printError(info: 'Websocket push data is not of type string and map');
       return;
     }
+    final localStats = Get.isRegistered<LocalStatisticsService>()
+        ? Get.find<LocalStatisticsService>()
+        : null;
+
     if (!message.startsWith('{') || !message.endsWith('}')) {
       if (!Get.isRegistered<ScriptLogController>(tag: name)) {
         Get.put(
@@ -43,11 +53,14 @@ extension ScriptServiceWsX on ScriptService {
         );
       }
       Get.find<ScriptLogController>(tag: name).addLog(message);
+      localStats?.recordLogLine(name, message);
       return;
     }
     final data = jsonDecode(message) as Map<String, dynamic>;
     if (data.containsKey('state')) {
-      scriptModelMap[name]!.update(state: ScriptState.getState(data['state']));
+      final nextState = ScriptState.getState(data['state']);
+      scriptModelMap[name]!.update(state: nextState);
+      localStats?.recordState(name, nextState);
       return;
     }
     if (!data.containsKey('schedule')) {
@@ -71,6 +84,7 @@ extension ScriptServiceWsX on ScriptService {
       pendingTaskList: pendingList,
       waitingTaskList: waitingList,
     );
+    localStats?.recordRunningTask(name, runningTask.taskName.value);
   }
 
   Future<void> stopScript(String name) async {
