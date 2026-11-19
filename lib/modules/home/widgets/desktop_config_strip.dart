@@ -248,7 +248,7 @@ class _ConfigStripPill extends StatelessWidget {
               ? scheme.primary.withValues(alpha: 0.16)
               : isActive
                   ? scheme.primary.withValues(alpha: isDark ? 0.22 : 0.10)
-                  : (isDark ? const Color(0xFF22242A) : Colors.white);
+                  : (theme.cardTheme.color ?? (isDark ? const Color(0xFF22242A) : Colors.white));
           final borderColor = isDropHover
               ? scheme.primary
               : isActive

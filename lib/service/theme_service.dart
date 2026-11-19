@@ -34,6 +34,8 @@ class AppSkinPreset {
 
   bool get isCustomImage => imagePath != null && imagePath!.trim().isNotEmpty;
 
+  bool get supportsTranslucentCards => isCustomImage || gradientColors != null;
+
   Map<String, dynamic> toCustomJson() => {
         'id': id,
         'label': label,
@@ -52,7 +54,7 @@ class AppSkinPreset {
       label: label.isEmpty ? '自定义图片' : label,
       isDark: true,
       previewColor: const Color(0xFF1F242D),
-      cardColor: const Color(0xCC181B22),
+      cardColor: const Color(0xFF141820),
       cardBorderColor: const Color(0x40FFFFFF),
       imagePath: path,
     );
@@ -94,7 +96,7 @@ class ThemeService extends GetxService {
         Color(0xFF123840),
         Color(0xFF0C1C24),
       ],
-      cardColor: Color(0xBF10282F),
+      cardColor: Color(0xFF10282F),
       cardBorderColor: Color(0x3D7DD3FC),
     ),
     AppSkinPreset(
@@ -107,7 +109,7 @@ class ThemeService extends GetxService {
         Color(0xFF1E3250),
         Color(0xFF111A2B),
       ],
-      cardColor: Color(0xBF18253A),
+      cardColor: Color(0xFF18253A),
       cardBorderColor: Color(0x3D93C5FD),
     ),
   ];
@@ -117,7 +119,10 @@ class ThemeService extends GetxService {
   final _color = ColorSeed.baseColor.color.obs;
   final activeSkinId = kPureWhiteId.obs;
   final customSkins = <AppSkinPreset>[].obs;
-  final skinOverlayOpacity = 0.48.obs;
+  final skinOverlayOpacity = 0.25.obs;
+  final skinCardOpacity = 0.52.obs;
+  final skinImageAlignX = 0.0.obs;
+  final skinImageAlignY = 0.0.obs;
 
   bool get isDarkMode => _dark.value;
   Color get color => _color.value;
@@ -136,13 +141,29 @@ class ThemeService extends GetxService {
     return isDarkMode ? builtInSkins.first : builtInSkins[1];
   }
 
+  Alignment get skinImageAlignment =>
+      Alignment(skinImageAlignX.value, skinImageAlignY.value);
+
   @override
   void onInit() {
     _loadCustomSkins();
     final savedOpacity = _storage.read(StorageKey.skinOverlayOpacity.name);
     if (savedOpacity is num) {
-      skinOverlayOpacity.value = savedOpacity.toDouble().clamp(0.15, 0.85);
+      skinOverlayOpacity.value = savedOpacity.toDouble().clamp(0.0, 0.85);
     }
+    final savedCardOpacity = _storage.read(StorageKey.skinCardOpacity.name);
+    if (savedCardOpacity is num) {
+      skinCardOpacity.value = savedCardOpacity.toDouble().clamp(0.05, 0.98);
+    }
+    final savedAlignX = _storage.read(StorageKey.skinImageAlignX.name);
+    if (savedAlignX is num) {
+      skinImageAlignX.value = savedAlignX.toDouble().clamp(-1.0, 1.0);
+    }
+    final savedAlignY = _storage.read(StorageKey.skinImageAlignY.name);
+    if (savedAlignY is num) {
+      skinImageAlignY.value = savedAlignY.toDouble().clamp(-1.0, 1.0);
+    }
+
     final savedDark = _storage.read(StorageKey.dark.name) ?? false;
     final savedSkinId =
         (_storage.read(StorageKey.skinPresetId.name) ?? '').toString().trim();
@@ -184,9 +205,24 @@ class ThemeService extends GetxService {
   }
 
   void setSkinOverlayOpacity(double value) {
-    final clamped = value.clamp(0.15, 0.85).toDouble();
+    final clamped = value.clamp(0.0, 0.85).toDouble();
     skinOverlayOpacity.value = clamped;
     _storage.write(StorageKey.skinOverlayOpacity.name, clamped);
+  }
+
+  void setSkinCardOpacity(double value) {
+    final clamped = value.clamp(0.05, 0.98).toDouble();
+    skinCardOpacity.value = clamped;
+    _storage.write(StorageKey.skinCardOpacity.name, clamped);
+  }
+
+  void setSkinImageAlignment(double x, double y) {
+    final cx = x.clamp(-1.0, 1.0).toDouble();
+    final cy = y.clamp(-1.0, 1.0).toDouble();
+    skinImageAlignX.value = cx;
+    skinImageAlignY.value = cy;
+    _storage.write(StorageKey.skinImageAlignX.name, cx);
+    _storage.write(StorageKey.skinImageAlignY.name, cy);
   }
 
   AppSkinPreset? addCustomImageSkin(String path, {String? name}) {
@@ -216,7 +252,7 @@ class ThemeService extends GetxService {
       label: displayName,
       isDark: true,
       previewColor: const Color(0xFF1F242D),
-      cardColor: const Color(0xCC181B22),
+      cardColor: const Color(0xFF141820),
       cardBorderColor: const Color(0x40FFFFFF),
       imagePath: normalizedPath,
     );

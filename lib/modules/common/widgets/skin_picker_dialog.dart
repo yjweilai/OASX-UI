@@ -7,7 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
 
-/// Opens the frosted-glass skin selector dialog with preset colors and custom images.
+/// Opens the frosted-glass skin selector dialog with preset colors,
+/// custom images, card transparency, and background focal position controls.
 Future<void> showSkinPickerDialog(BuildContext context) {
   return showDialog<void>(
     context: context,
@@ -41,27 +42,25 @@ class _SkinPickerDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final panelColor = isDark
-        ? const Color(0xE61A2028)
-        : const Color(0xF2FFFFFF);
+    final panelColor =
+        isDark ? const Color(0xE61A2028) : const Color(0xF2FFFFFF);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.14)
         : const Color(0xFFE2E6EE);
     final textColor = isDark ? Colors.white : const Color(0xFF111827);
-    final mutedColor =
-        isDark ? Colors.white70 : const Color(0xFF6B7280);
+    final mutedColor = isDark ? Colors.white70 : const Color(0xFF6B7280);
 
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            width: 380,
-            constraints: const BoxConstraints(maxHeight: 540),
+            width: 410,
+            constraints: const BoxConstraints(maxHeight: 620),
             decoration: BoxDecoration(
               color: panelColor,
               borderRadius: BorderRadius.circular(18),
@@ -134,7 +133,8 @@ class _SkinPickerDialog extends StatelessWidget {
                           isDarkDialog: isDark,
                           onTap: () => _themeService.selectSkin(skin.id),
                           onDelete: skin.isCustomImage
-                              ? () => _themeService.removeCustomImageSkin(skin.id)
+                              ? () =>
+                                  _themeService.removeCustomImageSkin(skin.id)
                               : null,
                         );
                       },
@@ -143,41 +143,83 @@ class _SkinPickerDialog extends StatelessWidget {
                 ),
                 Obx(() {
                   final active = _themeService.activeSkin;
-                  if (!active.isCustomImage) {
+                  if (!active.supportsTranslucentCards) {
                     return const SizedBox.shrink();
                   }
-                  final opacity = _themeService.skinOverlayOpacity.value;
+                  final cardOpacity = _themeService.skinCardOpacity.value;
+                  final overlayOpacity = _themeService.skinOverlayOpacity.value;
+                  final alignX = _themeService.skinImageAlignX.value;
+                  final alignY = _themeService.skinImageAlignY.value;
+
                   return Container(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     decoration: BoxDecoration(
                       border: Border(top: BorderSide(color: borderColor)),
                     ),
-                    child: Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          '背景遮罩',
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: mutedColor,
-                          ),
+                        _SliderRow(
+                          label: 'UI 框透明度',
+                          value: cardOpacity,
+                          min: 0.05,
+                          max: 0.98,
+                          mutedColor: mutedColor,
+                          onChanged: _themeService.setSkinCardOpacity,
                         ),
-                        Expanded(
-                          child: Slider(
-                            min: 0.15,
+                        if (active.isCustomImage) ...[
+                          _SliderRow(
+                            label: '背景暗度',
+                            value: overlayOpacity,
+                            min: 0.0,
                             max: 0.85,
-                            value: opacity,
+                            mutedColor: mutedColor,
                             onChanged: _themeService.setSkinOverlayOpacity,
                           ),
-                        ),
-                        SizedBox(
-                          width: 36,
-                          child: Text(
-                            '${(opacity * 100).round()}%',
-                            textAlign: TextAlign.end,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: mutedColor,
-                            ),
+                          const SizedBox(height: 6),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 76,
+                                child: Text(
+                                  '图片位置',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: mutedColor,
+                                  ),
+                                ),
+                              ),
+                              _AlignmentNineGrid(
+                                alignX: alignX,
+                                alignY: alignY,
+                                isDark: isDark,
+                                onSelect: _themeService.setSkinImageAlignment,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _CompactAxisSlider(
+                                      label: '左右',
+                                      value: alignX,
+                                      mutedColor: mutedColor,
+                                      onChanged: (v) => _themeService
+                                          .setSkinImageAlignment(v, alignY),
+                                    ),
+                                    _CompactAxisSlider(
+                                      label: '上下',
+                                      value: alignY,
+                                      mutedColor: mutedColor,
+                                      onChanged: (v) => _themeService
+                                          .setSkinImageAlignment(alignX, v),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   );
@@ -185,6 +227,183 @@ class _SkinPickerDialog extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.mutedColor,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final Color mutedColor;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 32,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(color: mutedColor),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6.5),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 12),
+              ),
+              child: Slider(
+                min: min,
+                max: max,
+                value: value.clamp(min, max),
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 38,
+            child: Text(
+              '${(value * 100).round()}%',
+              textAlign: TextAlign.end,
+              style: theme.textTheme.labelSmall?.copyWith(color: mutedColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactAxisSlider extends StatelessWidget {
+  const _CompactAxisSlider({
+    required this.label,
+    required this.value,
+    required this.mutedColor,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final Color mutedColor;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      height: 26,
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(color: mutedColor),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2.5,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5.5),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 10),
+              ),
+              child: Slider(
+                min: -1.0,
+                max: 1.0,
+                value: value.clamp(-1.0, 1.0),
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlignmentNineGrid extends StatelessWidget {
+  const _AlignmentNineGrid({
+    required this.alignX,
+    required this.alignY,
+    required this.isDark,
+    required this.onSelect,
+  });
+
+  final double alignX;
+  final double alignY;
+  final bool isDark;
+  final void Function(double x, double y) onSelect;
+
+  static const List<double> _stops = [-1.0, 0.0, 1.0];
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.black.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.14)
+              : Colors.black.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final y in _stops)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final x in _stops)
+                  _buildCell(x, y, scheme),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCell(double x, double y, ColorScheme scheme) {
+    final active = (alignX - x).abs() < 0.2 && (alignY - y).abs() < 0.2;
+    return InkWell(
+      borderRadius: BorderRadius.circular(4),
+      onTap: () => onSelect(x, y),
+      child: Container(
+        width: 18,
+        height: 18,
+        margin: const EdgeInsets.all(1.5),
+        decoration: BoxDecoration(
+          color: active
+              ? scheme.primary
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.14)
+                  : Colors.black.withValues(alpha: 0.12)),
+          borderRadius: BorderRadius.circular(4),
         ),
       ),
     );

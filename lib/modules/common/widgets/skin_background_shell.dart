@@ -6,7 +6,7 @@ import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
 
 /// Renders the active background skin (solid color, gradient, or local image)
-/// and adapts child CardTheme colors for crisp contrast.
+/// and adapts child CardTheme opacity and image alignment dynamically.
 class SkinBackgroundShell extends StatelessWidget {
   const SkinBackgroundShell({
     super.key,
@@ -21,11 +21,34 @@ class SkinBackgroundShell extends StatelessWidget {
     return Obx(() {
       final skin = themeService.activeSkin;
       final overlayOpacity = themeService.skinOverlayOpacity.value;
+      final cardOpacity = themeService.skinCardOpacity.value;
+      final alignX = themeService.skinImageAlignX.value;
+      final alignY = themeService.skinImageAlignY.value;
       final baseTheme = Theme.of(context);
 
+      final baseCardColor = skin.cardColor ??
+          baseTheme.cardTheme.color ??
+          baseTheme.colorScheme.surface;
+      final resolvedCardColor = skin.supportsTranslucentCards
+          ? baseCardColor.withValues(alpha: cardOpacity)
+          : baseCardColor;
+
+      final adaptedColorScheme = skin.supportsTranslucentCards
+          ? baseTheme.colorScheme.copyWith(
+              surfaceContainerHighest: baseTheme
+                  .colorScheme.surfaceContainerHighest
+                  .withValues(alpha: (cardOpacity * 0.72).clamp(0.08, 0.85)),
+              surfaceContainerHigh: baseTheme.colorScheme.surfaceContainerHigh
+                  .withValues(alpha: (cardOpacity * 0.72).clamp(0.08, 0.85)),
+              surfaceContainer: baseTheme.colorScheme.surfaceContainer
+                  .withValues(alpha: (cardOpacity * 0.72).clamp(0.08, 0.85)),
+            )
+          : baseTheme.colorScheme;
+
       final adaptedTheme = baseTheme.copyWith(
+        colorScheme: adaptedColorScheme,
         cardTheme: baseTheme.cardTheme.copyWith(
-          color: skin.cardColor ?? baseTheme.cardTheme.color,
+          color: resolvedCardColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
             side: BorderSide(
@@ -44,11 +67,13 @@ class SkinBackgroundShell extends StatelessWidget {
             Image.file(
               File(skin.imagePath!),
               fit: BoxFit.cover,
+              alignment: Alignment(alignX, alignY),
               filterQuality: FilterQuality.medium,
             ),
-            ColoredBox(
-              color: Colors.black.withValues(alpha: overlayOpacity),
-            ),
+            if (overlayOpacity > 0.005)
+              ColoredBox(
+                color: Colors.black.withValues(alpha: overlayOpacity),
+              ),
           ],
         );
       } else if (skin.gradientColors != null) {

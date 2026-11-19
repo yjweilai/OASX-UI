@@ -21,5 +21,8 @@ enum StorageKey {
   skinPresetId,
   customSkins,
   skinOverlayOpacity,
+  skinCardOpacity,
+  skinImageAlignX,
+  skinImageAlignY,
   bentoColumnRatios,
 }
