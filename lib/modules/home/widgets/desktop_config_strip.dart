@@ -230,11 +230,11 @@ class _ConfigStripPill extends StatelessWidget {
 
     return DragTarget<ConfigDragPayload>(
       onWillAcceptWithDetails: (details) =>
-          details.data.sourceConfig != script.name,
+          details.data.canDropOn(script.name),
       onAcceptWithDetails: (details) {
         controller.acceptConfigDrag(
           payload: details.data,
-          targetConfig: script.name,
+          destinationConfig: script.name,
         );
       },
       builder: (context, candidateData, rejectedData) {

@@ -171,10 +171,11 @@ class ThemeService extends GetxService {
   }
 
   void selectSkin(String skinId) {
-    final target = allSkins.where((s) => s.id == skinId).firstOrNull;
-    if (target == null) {
+    final matches = allSkins.where((s) => s.id == skinId);
+    if (matches.isEmpty) {
       return;
     }
+    final target = matches.first;
     activeSkinId.value = target.id;
     _storage.write(StorageKey.skinPresetId.name, target.id);
     _dark.value = target.isDark;
@@ -196,10 +197,10 @@ class ThemeService extends GetxService {
     if (!kIsWeb && !File(normalizedPath).existsSync()) {
       return null;
     }
-    final existing = customSkins
-        .where((s) => s.imagePath == normalizedPath)
-        .firstOrNull;
-    if (existing != null) {
+    final existingMatches =
+        customSkins.where((s) => s.imagePath == normalizedPath);
+    if (existingMatches.isNotEmpty) {
+      final existing = existingMatches.first;
       selectSkin(existing.id);
       return existing;
     }
