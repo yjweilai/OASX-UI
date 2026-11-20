@@ -832,27 +832,38 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Unified compact header toolbar
+            // Unified compact header toolbar (auto-wraps cleanly when narrow)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
                 children: [
-                  _RightTabPill(
-                    label: I18n.log.tr,
-                    selected: isLogs,
-                    onTap: () => widget.controller
-                        .setActiveWorkbenchSidebarTabValue(
-                            HomeWorkbenchTab.logs),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _RightTabPill(
+                        label: I18n.log.tr,
+                        selected: isLogs,
+                        onTap: () => widget.controller
+                            .setActiveWorkbenchSidebarTabValue(
+                                HomeWorkbenchTab.logs),
+                      ),
+                      const SizedBox(width: 6),
+                      _RightTabPill(
+                        label: I18n.homeStatsTab.tr,
+                        selected: !isLogs,
+                        onTap: () => widget.controller
+                            .setActiveWorkbenchSidebarTabValue(
+                                HomeWorkbenchTab.stats),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 6),
-                  _RightTabPill(
-                    label: I18n.homeStatsTab.tr,
-                    selected: !isLogs,
-                    onTap: () => widget.controller
-                        .setActiveWorkbenchSidebarTabValue(
-                            HomeWorkbenchTab.stats),
-                  ),
-                  const Spacer(),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                   if (isLogs) ...[
                     Container(
                       decoration: BoxDecoration(
@@ -1018,6 +1029,8 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                       ),
                     ),
                   ],
+                    ],
+                  ),
                 ],
               ),
             ),

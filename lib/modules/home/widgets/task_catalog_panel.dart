@@ -4,6 +4,7 @@ import 'package:oasx/api/api_client.dart';
 import 'package:oasx/modules/args/index.dart';
 import 'package:oasx/modules/common/models/config_drag_payload.dart';
 import 'package:oasx/modules/common/widgets/drag_copy_feedback.dart';
+import 'package:oasx/modules/common/widgets/styled_typography_text.dart';
 import 'package:oasx/modules/home/controllers/dashboard_controller.dart';
 import 'package:oasx/modules/home/models/config_model.dart';
 import 'package:oasx/modules/home/widgets/split_scroll_row.dart';
@@ -382,14 +383,15 @@ class _CatalogSectionTitle extends StatelessWidget {
           const SizedBox(width: 10),
         ],
         Expanded(
-          child: Text(
+          child: StyledTypographyText(
             section.groupName.tr,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleSmall,
           ),
         ),
         const SizedBox(width: 10),
-        Text(
+        StyledTypographyText(
           '${section.tasks.length}',
           style: Theme.of(context).textTheme.labelMedium,
         ),
@@ -446,12 +448,12 @@ class _CatalogTaskRow extends StatelessWidget {
       sourceConfig: sourceScriptName,
       taskName: task.name,
     );
-    final nameLabel = Text(
+    final nameLabel = StyledTypographyText(
       task.name.tr,
       maxLines: 1,
       overflow: TextOverflow.visible,
       softWrap: false,
-      style: Theme.of(context).textTheme.bodyLarge,
+      style: Theme.of(context).textTheme.bodyMedium,
     );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -465,7 +467,7 @@ class _CatalogTaskRow extends StatelessWidget {
           scrollKey: PageStorageKey<String>('task-row-scroll-${task.name}'),
           minHeight: _minRowHeight,
           trailingExtent: _actionExtent,
-          trailingBackgroundColor: rowBackground,
+          trailingBackgroundColor: Colors.transparent,
           trailing: _TaskIconBar(
             task: task,
             onOpenTask: onOpenTask,
