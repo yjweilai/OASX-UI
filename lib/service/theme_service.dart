@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,6 +8,20 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:oasx/config/theme.dart';
 import 'package:oasx/modules/common/models/storage_key.dart';
+import 'package:path_provider/path_provider.dart';
+
+/// Describes a selectable text color preset for transparent/custom skins.
+class AppTextColorOption {
+  const AppTextColorOption({
+    required this.id,
+    required this.label,
+    required this.color,
+  });
+
+  final String id;
+  final String label;
+  final Color? color;
+}
 
 /// Describes a built-in color/gradient skin or a user-selected custom image skin.
 class AppSkinPreset {
@@ -35,6 +50,20 @@ class AppSkinPreset {
   bool get isCustomImage => imagePath != null && imagePath!.trim().isNotEmpty;
 
   bool get supportsTranslucentCards => isCustomImage || gradientColors != null;
+
+  AppSkinPreset copyWith({String? imagePath}) {
+    return AppSkinPreset(
+      id: id,
+      label: label,
+      isDark: isDark,
+      previewColor: previewColor,
+      gradientColors: gradientColors,
+      backgroundColor: backgroundColor,
+      cardColor: cardColor,
+      cardBorderColor: cardBorderColor,
+      imagePath: imagePath ?? this.imagePath,
+    );
+  }
 
   Map<String, dynamic> toCustomJson() => {
         'id': id,
@@ -66,6 +95,16 @@ class ThemeService extends GetxService {
   static const String kPureWhiteId = 'pure_white';
   static const String kAuroraId = 'aurora';
   static const String kTwilightBlueId = 'twilight_blue';
+
+  static const List<AppTextColorOption> textColorOptions = [
+    AppTextColorOption(id: 'auto', label: '自动', color: null),
+    AppTextColorOption(id: 'black', label: '黑', color: Color(0xFF111827)),
+    AppTextColorOption(id: 'white', label: '白', color: Color(0xFFF9FAFB)),
+    AppTextColorOption(id: 'blue', label: '蓝', color: Color(0xFF38BDF8)),
+    AppTextColorOption(id: 'green', label: '绿', color: Color(0xFF4ADE80)),
+    AppTextColorOption(id: 'red', label: '红', color: Color(0xFFF87171)),
+    AppTextColorOption(id: 'yellow', label: '黄', color: Color(0xFFFACC15)),
+  ];
 
   static const List<AppSkinPreset> builtInSkins = [
     AppSkinPreset(
@@ -122,8 +161,11 @@ class ThemeService extends GetxService {
   final skinOverlayOpacity = 0.20.obs;
   final skinCardOpacity = 0.48.obs;
   final customSkinDarkMode = false.obs;
+  final skinTextColorId = 'auto'.obs;
   final skinImageAlignX = 0.0.obs;
   final skinImageAlignY = 0.0.obs;
+
+  Directory? _cachedSkinsDir;
 
   bool get isDarkMode => _dark.value;
   Color get color => _color.value;
@@ -131,6 +173,16 @@ class ThemeService extends GetxService {
   ThemeMode get themeMode => isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
   List<AppSkinPreset> get allSkins => [...builtInSkins, ...customSkins];
+
+  Color? get activeTextColor {
+    final id = skinTextColorId.value;
+    for (final opt in textColorOptions) {
+      if (opt.id == id) {
+        return opt.color;
+      }
+    }
+    return null;
+  }
 
   AppSkinPreset get activeSkin {
     final id = activeSkinId.value;
@@ -170,6 +222,12 @@ class ThemeService extends GetxService {
     if (savedCardOpacity is num) {
       skinCardOpacity.value = savedCardOpacity.toDouble().clamp(0.05, 0.98);
     }
+    final savedTextColorId =
+        (_storage.read(StorageKey.skinTextColorId.name) ?? '').toString().trim();
+    if (savedTextColorId.isNotEmpty &&
+        textColorOptions.any((o) => o.id == savedTextColorId)) {
+      skinTextColorId.value = savedTextColorId;
+    }
     final savedAlignX = _storage.read(StorageKey.skinImageAlignX.name);
     if (savedAlignX is num) {
       skinImageAlignX.value = savedAlignX.toDouble().clamp(-1.0, 1.0);
@@ -194,6 +252,7 @@ class ThemeService extends GetxService {
       activeSkinId.value = savedDark ? kPureBlackId : kPureWhiteId;
     }
     switchTheme(_dark.value);
+    unawaited(_migrateExistingCustomSkins());
     super.onInit();
   }
 
@@ -221,6 +280,14 @@ class ThemeService extends GetxService {
       _storage.write(StorageKey.dark.name, dark);
       Get.changeThemeMode(themeMode);
     }
+  }
+
+  void setSkinTextColor(String colorId) {
+    if (!textColorOptions.any((o) => o.id == colorId)) {
+      return;
+    }
+    skinTextColorId.value = colorId;
+    _storage.write(StorageKey.skinTextColorId.name, colorId);
   }
 
   void selectSkin(String skinId) {
@@ -259,7 +326,112 @@ class ThemeService extends GetxService {
     _storage.write(StorageKey.skinImageAlignY.name, cy);
   }
 
-  AppSkinPreset? addCustomImageSkin(String path, {String? name}) {
+  /// Resolves the managed `skins/` directory (preferring next to oasx.exe,
+  /// falling back to application support directory if not writable).
+  Future<Directory?> _resolveSkinsDir() async {
+    if (kIsWeb) {
+      return null;
+    }
+    if (_cachedSkinsDir != null && _cachedSkinsDir!.existsSync()) {
+      return _cachedSkinsDir;
+    }
+    final sep = Platform.pathSeparator;
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      try {
+        final exeDir = File(Platform.resolvedExecutable).parent;
+        final candidate = Directory('${exeDir.path}${sep}skins');
+        if (!candidate.existsSync()) {
+          candidate.createSync(recursive: true);
+        }
+        // Verify write permission with a tiny probe file.
+        final probe = File('${candidate.path}$sep.write_test');
+        probe.writeAsStringSync('ok');
+        probe.deleteSync();
+        _cachedSkinsDir = candidate;
+        return candidate;
+      } catch (_) {}
+    }
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      final fallback = Directory('${supportDir.path}${sep}skins');
+      if (!fallback.existsSync()) {
+        fallback.createSync(recursive: true);
+      }
+      _cachedSkinsDir = fallback;
+      return fallback;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Copies a local image file into the managed `skins/` directory so deleting
+  /// the original file on disk will never break the custom background.
+  Future<String> _copyIntoManagedSkinsDir(String sourcePath) async {
+    if (kIsWeb) {
+      return sourcePath;
+    }
+    final sourceFile = File(sourcePath);
+    if (!sourceFile.existsSync()) {
+      return sourcePath;
+    }
+    final skinsDir = await _resolveSkinsDir();
+    if (skinsDir == null) {
+      return sourcePath;
+    }
+    final normalizedSkinsPath = skinsDir.path.toLowerCase();
+    if (sourceFile.parent.path.toLowerCase() == normalizedSkinsPath) {
+      return sourcePath;
+    }
+    final baseName = sourcePath.split(RegExp(r'[/\\]')).last;
+    final dotIndex = baseName.lastIndexOf('.');
+    final ext = dotIndex > 0 ? baseName.substring(dotIndex) : '.png';
+    final rawStem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+    final safeStem = rawStem.replaceAll(RegExp(r'[^\w\u4e00-\u9fa5-]'), '_');
+    final fileName =
+        'skin_${DateTime.now().millisecondsSinceEpoch}_$safeStem$ext';
+    final destPath = '${skinsDir.path}${Platform.pathSeparator}$fileName';
+    try {
+      await sourceFile.copy(destPath);
+      return destPath;
+    } catch (_) {
+      return sourcePath;
+    }
+  }
+
+  Future<void> _migrateExistingCustomSkins() async {
+    if (kIsWeb || customSkins.isEmpty) {
+      return;
+    }
+    final skinsDir = await _resolveSkinsDir();
+    if (skinsDir == null) {
+      return;
+    }
+    final normalizedSkinsPath = skinsDir.path.toLowerCase();
+    var changed = false;
+    final updated = <AppSkinPreset>[];
+    for (final skin in customSkins) {
+      final path = skin.imagePath;
+      if (path != null && path.isNotEmpty) {
+        final file = File(path);
+        if (file.existsSync() &&
+            file.parent.path.toLowerCase() != normalizedSkinsPath) {
+          final copied = await _copyIntoManagedSkinsDir(path);
+          if (copied != path) {
+            updated.add(skin.copyWith(imagePath: copied));
+            changed = true;
+            continue;
+          }
+        }
+      }
+      updated.add(skin);
+    }
+    if (changed) {
+      customSkins.assignAll(updated);
+      _saveCustomSkins();
+    }
+  }
+
+  Future<AppSkinPreset?> addCustomImageSkin(String path, {String? name}) async {
     final normalizedPath = path.trim();
     if (normalizedPath.isEmpty) {
       return null;
@@ -285,6 +457,9 @@ class ThemeService extends GetxService {
     final displayName = (name != null && name.trim().isNotEmpty)
         ? name.trim()
         : (fileName.isEmpty ? '自定义图片' : fileName);
+
+    final storedPath = await _copyIntoManagedSkinsDir(normalizedPath);
+
     final preset = AppSkinPreset(
       id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
       label: displayName,
@@ -294,7 +469,7 @@ class ThemeService extends GetxService {
           ? const Color(0xFF141820)
           : Colors.white,
       cardBorderColor: const Color(0x40FFFFFF),
-      imagePath: normalizedPath,
+      imagePath: storedPath,
     );
     customSkins.add(preset);
     _saveCustomSkins();
@@ -303,11 +478,32 @@ class ThemeService extends GetxService {
   }
 
   void removeCustomImageSkin(String id) {
+    final removedList = customSkins.where((s) => s.id == id).toList();
     customSkins.removeWhere((s) => s.id == id);
     _saveCustomSkins();
     if (activeSkinId.value == id) {
       selectSkin(kPureWhiteId);
     }
+    if (!kIsWeb && removedList.isNotEmpty) {
+      unawaited(_deleteManagedSkinFile(removedList.first.imagePath));
+    }
+  }
+
+  Future<void> _deleteManagedSkinFile(String? imagePath) async {
+    if (imagePath == null || imagePath.trim().isEmpty) {
+      return;
+    }
+    final skinsDir = await _resolveSkinsDir();
+    if (skinsDir == null) {
+      return;
+    }
+    try {
+      final file = File(imagePath);
+      if (file.existsSync() &&
+          file.parent.path.toLowerCase() == skinsDir.path.toLowerCase()) {
+        await file.delete();
+      }
+    } catch (_) {}
   }
 
   void _loadCustomSkins() {

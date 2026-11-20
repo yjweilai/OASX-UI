@@ -8,8 +8,8 @@ import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
 
 /// Opens the frosted-glass skin selector dialog with preset colors,
-/// custom images, light/dark UI style toggle, card transparency,
-/// and background focal position controls.
+/// custom images (auto-backed up to `skins/`), custom text color,
+/// light/dark UI style toggle, card transparency, and background position controls.
 Future<void> showSkinPickerDialog(BuildContext context) {
   return showDialog<void>(
     context: context,
@@ -36,7 +36,7 @@ class _SkinPickerDialog extends StatelessWidget {
     if (path == null || path.trim().isEmpty) {
       return;
     }
-    _themeService.addCustomImageSkin(path);
+    await _themeService.addCustomImageSkin(path);
   }
 
   @override
@@ -54,14 +54,14 @@ class _SkinPickerDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            width: 410,
-            constraints: const BoxConstraints(maxHeight: 650),
+            width: 420,
+            constraints: const BoxConstraints(maxHeight: 680),
             decoration: BoxDecoration(
               color: panelColor,
               borderRadius: BorderRadius.circular(18),
@@ -144,12 +144,10 @@ class _SkinPickerDialog extends StatelessWidget {
                 ),
                 Obx(() {
                   final active = _themeService.activeSkin;
-                  if (!active.supportsTranslucentCards) {
-                    return const SizedBox.shrink();
-                  }
                   final cardOpacity = _themeService.skinCardOpacity.value;
                   final overlayOpacity = _themeService.skinOverlayOpacity.value;
                   final customDark = _themeService.customSkinDarkMode.value;
+                  final textColorId = _themeService.skinTextColorId.value;
                   final alignX = _themeService.skinImageAlignX.value;
                   final alignY = _themeService.skinImageAlignY.value;
 
@@ -161,103 +159,155 @@ class _SkinPickerDialog extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (active.isCustomImage) ...[
-                          Row(
-                            children: [
-                              SizedBox(
-                                width: 76,
-                                child: Text(
-                                  '界面风格',
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: mutedColor,
-                                  ),
+                        // Font color picker (Auto + Black, White, Blue, Green, Red, Yellow)
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 76,
+                              child: Text(
+                                '字体颜色',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: mutedColor,
                                 ),
                               ),
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    ChoiceChip(
-                                      label: const Text('浅色文字框'),
-                                      selected: !customDark,
+                            ),
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: ThemeService.textColorOptions
+                                    .map((option) {
+                                  final selected = option.id == textColorId;
+                                  if (option.color == null) {
+                                    return ChoiceChip(
+                                      label: Text(
+                                        option.label,
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      selected: selected,
                                       visualDensity: VisualDensity.compact,
+                                      materialTapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
                                       onSelected: (_) => _themeService
-                                          .setCustomSkinDarkMode(false),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    ChoiceChip(
-                                      label: const Text('深色文字框'),
-                                      selected: customDark,
-                                      visualDensity: VisualDensity.compact,
-                                      onSelected: (_) => _themeService
-                                          .setCustomSkinDarkMode(true),
-                                    ),
-                                  ],
-                                ),
+                                          .setSkinTextColor(option.id),
+                                    );
+                                  }
+                                  return _TextColorDot(
+                                    label: option.label,
+                                    color: option.color!,
+                                    selected: selected,
+                                    isDarkDialog: isDark,
+                                    onTap: () => _themeService
+                                        .setSkinTextColor(option.id),
+                                  );
+                                }).toList(),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                        ],
-                        _SliderRow(
-                          label: 'UI 框透明度',
-                          value: cardOpacity,
-                          min: 0.05,
-                          max: 0.98,
-                          mutedColor: mutedColor,
-                          onChanged: _themeService.setSkinCardOpacity,
+                            ),
+                          ],
                         ),
-                        if (active.isCustomImage) ...[
-                          _SliderRow(
-                            label: '背景暗度',
-                            value: overlayOpacity,
-                            min: 0.0,
-                            max: 0.85,
-                            mutedColor: mutedColor,
-                            onChanged: _themeService.setSkinOverlayOpacity,
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 76,
-                                child: Text(
-                                  '图片位置',
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: mutedColor,
+                        if (active.supportsTranslucentCards) ...[
+                          const SizedBox(height: 8),
+                          if (active.isCustomImage) ...[
+                            Row(
+                              children: [
+                                SizedBox(
+                                  width: 76,
+                                  child: Text(
+                                    '界面风格',
+                                    style:
+                                        theme.textTheme.labelMedium?.copyWith(
+                                      color: mutedColor,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              _AlignmentNineGrid(
-                                alignX: alignX,
-                                alignY: alignY,
-                                isDark: isDark,
-                                onSelect: _themeService.setSkinImageAlignment,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _CompactAxisSlider(
-                                      label: '左右',
-                                      value: alignX,
-                                      mutedColor: mutedColor,
-                                      onChanged: (v) => _themeService
-                                          .setSkinImageAlignment(v, alignY),
-                                    ),
-                                    _CompactAxisSlider(
-                                      label: '上下',
-                                      value: alignY,
-                                      mutedColor: mutedColor,
-                                      onChanged: (v) => _themeService
-                                          .setSkinImageAlignment(alignX, v),
-                                    ),
-                                  ],
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      ChoiceChip(
+                                        label: const Text('浅色文字框'),
+                                        selected: !customDark,
+                                        visualDensity: VisualDensity.compact,
+                                        onSelected: (_) => _themeService
+                                            .setCustomSkinDarkMode(false),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      ChoiceChip(
+                                        label: const Text('深色文字框'),
+                                        selected: customDark,
+                                        visualDensity: VisualDensity.compact,
+                                        onSelected: (_) => _themeService
+                                            .setCustomSkinDarkMode(true),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                          ],
+                          _SliderRow(
+                            label: 'UI 框透明度',
+                            value: cardOpacity,
+                            min: 0.05,
+                            max: 0.98,
+                            mutedColor: mutedColor,
+                            onChanged: _themeService.setSkinCardOpacity,
                           ),
+                          if (active.isCustomImage) ...[
+                            _SliderRow(
+                              label: '背景暗度',
+                              value: overlayOpacity,
+                              min: 0.0,
+                              max: 0.85,
+                              mutedColor: mutedColor,
+                              onChanged: _themeService.setSkinOverlayOpacity,
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                SizedBox(
+                                  width: 76,
+                                  child: Text(
+                                    '图片位置',
+                                    style:
+                                        theme.textTheme.labelMedium?.copyWith(
+                                      color: mutedColor,
+                                    ),
+                                  ),
+                                ),
+                                _AlignmentNineGrid(
+                                  alignX: alignX,
+                                  alignY: alignY,
+                                  isDark: isDark,
+                                  onSelect: _themeService.setSkinImageAlignment,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _CompactAxisSlider(
+                                        label: '左右',
+                                        value: alignX,
+                                        mutedColor: mutedColor,
+                                        onChanged: (v) => _themeService
+                                            .setSkinImageAlignment(v, alignY),
+                                      ),
+                                      _CompactAxisSlider(
+                                        label: '上下',
+                                        value: alignY,
+                                        mutedColor: mutedColor,
+                                        onChanged: (v) => _themeService
+                                            .setSkinImageAlignment(alignX, v),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ],
                     ),
@@ -266,6 +316,62 @@ class _SkinPickerDialog extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TextColorDot extends StatelessWidget {
+  const _TextColorDot({
+    required this.label,
+    required this.color,
+    required this.selected,
+    required this.isDarkDialog,
+    required this.onTap,
+  });
+
+  final String label;
+  final Color color;
+  final bool selected;
+  final bool isDarkDialog;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final checkColor =
+        color.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
+    return Tooltip(
+      message: label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected
+                  ? scheme.primary
+                  : (isDarkDialog ? Colors.white38 : Colors.black26),
+              width: selected ? 2.4 : 1.2,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.45),
+                      blurRadius: 6,
+                    ),
+                  ]
+                : const [],
+          ),
+          child: selected
+              ? Icon(Icons.check_rounded, size: 14, color: checkColor)
+              : null,
         ),
       ),
     );

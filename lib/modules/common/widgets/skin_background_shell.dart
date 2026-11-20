@@ -6,7 +6,7 @@ import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
 
 /// Renders the active background skin (solid color, gradient, or local image)
-/// and adapts child CardTheme & cardColor opacity dynamically.
+/// and adapts child CardTheme, cardColor opacity, and custom text color dynamically.
 class SkinBackgroundShell extends StatelessWidget {
   const SkinBackgroundShell({
     super.key,
@@ -22,6 +22,7 @@ class SkinBackgroundShell extends StatelessWidget {
       final skin = themeService.activeSkin;
       final overlayOpacity = themeService.skinOverlayOpacity.value;
       final cardOpacity = themeService.skinCardOpacity.value;
+      final customTextColor = themeService.activeTextColor;
       final alignX = themeService.skinImageAlignX.value;
       final alignY = themeService.skinImageAlignY.value;
       final baseTheme = Theme.of(context);
@@ -34,7 +35,7 @@ class SkinBackgroundShell extends StatelessWidget {
           : baseCardColor;
 
       final innerAlpha = (cardOpacity * 0.70).clamp(0.06, 0.85).toDouble();
-      final adaptedColorScheme = skin.supportsTranslucentCards
+      var adaptedColorScheme = skin.supportsTranslucentCards
           ? baseTheme.colorScheme.copyWith(
               surfaceContainerHighest: baseTheme
                   .colorScheme.surfaceContainerHighest
@@ -48,7 +49,14 @@ class SkinBackgroundShell extends StatelessWidget {
             )
           : baseTheme.colorScheme;
 
-      final adaptedTheme = baseTheme.copyWith(
+      if (customTextColor != null) {
+        adaptedColorScheme = adaptedColorScheme.copyWith(
+          onSurface: customTextColor,
+          onSurfaceVariant: customTextColor.withValues(alpha: 0.78),
+        );
+      }
+
+      var adaptedTheme = baseTheme.copyWith(
         colorScheme: adaptedColorScheme,
         cardColor: resolvedCardColor,
         cardTheme: baseTheme.cardTheme.copyWith(
@@ -62,6 +70,26 @@ class SkinBackgroundShell extends StatelessWidget {
           ),
         ),
       );
+
+      if (customTextColor != null) {
+        adaptedTheme = adaptedTheme.copyWith(
+          textTheme: baseTheme.textTheme.apply(
+            bodyColor: customTextColor,
+            displayColor: customTextColor,
+          ),
+          primaryTextTheme: baseTheme.primaryTextTheme.apply(
+            bodyColor: customTextColor,
+            displayColor: customTextColor,
+          ),
+          iconTheme: baseTheme.iconTheme.copyWith(color: customTextColor),
+          inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
+            hintStyle: TextStyle(
+              color: customTextColor.withValues(alpha: 0.65),
+            ),
+            prefixIconColor: customTextColor.withValues(alpha: 0.80),
+          ),
+        );
+      }
 
       Widget background;
       if (skin.isCustomImage && !kIsWeb && File(skin.imagePath!).existsSync()) {
@@ -96,13 +124,20 @@ class SkinBackgroundShell extends StatelessWidget {
         );
       }
 
+      final foreground = customTextColor != null
+          ? DefaultTextStyle.merge(
+              style: TextStyle(color: customTextColor),
+              child: child,
+            )
+          : child;
+
       return Theme(
         data: adaptedTheme,
         child: Stack(
           fit: StackFit.expand,
           children: [
             Positioned.fill(child: background),
-            Positioned.fill(child: child),
+            Positioned.fill(child: foreground),
           ],
         ),
       );
