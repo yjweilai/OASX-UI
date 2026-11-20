@@ -16,8 +16,11 @@ enum GamePreviewMode {
 }
 
 /// Captures quasi-realtime game frames via local ADB (for emulators)
-/// or Windows native PrintWindow API (for PC desktop clients).
+/// or Windows native PrintWindow API (for PC desktop clients),
+/// with per-script window binding and automatic sync on config switch.
 class GamePreviewService extends GetxService {
+  static const String _kScriptWindowMapKey = 'game_preview_window_map_v1';
+
   final GetStorage _storage = GetStorage();
 
   final mode = GamePreviewMode.adb.obs;
@@ -33,8 +36,10 @@ class GamePreviewService extends GetxService {
 
   Timer? _timer;
   bool _inFlight = false;
+  int _captureGeneration = 0;
   String _activeScript = '';
   final Map<String, String> _scriptSerialCache = {};
+  final Map<String, String> _scriptWindowMap = {};
 
   @override
   void onInit() {
@@ -46,6 +51,8 @@ class GamePreviewService extends GetxService {
     final savedAdb =
         (_storage.read(StorageKey.gamePreviewAdbPath.name) ?? '').toString();
     adbPath.value = savedAdb.trim();
+
+    _loadScriptWindowMap();
 
     final savedWindow =
         (_storage.read(StorageKey.gamePreviewWindowTitle.name) ?? '')
@@ -69,6 +76,29 @@ class GamePreviewService extends GetxService {
     super.onClose();
   }
 
+  void _loadScriptWindowMap() {
+    final raw = _storage.read(_kScriptWindowMapKey);
+    if (raw == null) {
+      return;
+    }
+    try {
+      final decoded = raw is String ? jsonDecode(raw) : raw;
+      if (decoded is Map) {
+        for (final entry in decoded.entries) {
+          final k = entry.key.toString().trim();
+          final v = (entry.value ?? '').toString().trim();
+          if (k.isNotEmpty && v.isNotEmpty) {
+            _scriptWindowMap[k] = v;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _saveScriptWindowMap() {
+    _storage.write(_kScriptWindowMapKey, jsonEncode(_scriptWindowMap));
+  }
+
   void setMode(GamePreviewMode nextMode) {
     if (mode.value == nextMode) {
       return;
@@ -77,6 +107,9 @@ class GamePreviewService extends GetxService {
     _storage.write(StorageKey.gamePreviewMode.name, nextMode.name);
     lastError.value = '';
     if (nextMode == GamePreviewMode.windowsWindow) {
+      if (_activeScript.isNotEmpty) {
+        windowTitle.value = _resolveWindowTitleForScript(_activeScript);
+      }
       unawaited(scanWindows());
     }
     if (isStreaming.value && _activeScript.isNotEmpty) {
@@ -99,10 +132,30 @@ class GamePreviewService extends GetxService {
     }
   }
 
-  void setWindowTitle(String value) {
+  void setWindowTitle(String value, {String? scriptName}) {
     final normalized = value.trim();
-    windowTitle.value = normalized.isEmpty ? '阴阳师' : normalized;
-    _storage.write(StorageKey.gamePreviewWindowTitle.name, windowTitle.value);
+    final target = (scriptName ?? _activeScript).trim();
+    final resolved =
+        normalized.isEmpty ? (target.isNotEmpty ? target : '阴阳师') : normalized;
+    windowTitle.value = resolved;
+    _storage.write(StorageKey.gamePreviewWindowTitle.name, resolved);
+    if (target.isNotEmpty) {
+      _scriptWindowMap[target] = resolved;
+      _saveScriptWindowMap();
+    }
+  }
+
+  String _resolveWindowTitleForScript(String scriptName) {
+    final normalized = scriptName.trim();
+    if (normalized.isEmpty) {
+      return windowTitle.value.trim().isEmpty ? '阴阳师' : windowTitle.value.trim();
+    }
+    final mapped = _scriptWindowMap[normalized];
+    if (mapped != null && mapped.trim().isNotEmpty) {
+      return mapped.trim();
+    }
+    // Default to matching the window with the same name as the active config (e.g. p1, p2, p3).
+    return normalized;
   }
 
   void setIntervalSeconds(int seconds) {
@@ -114,19 +167,28 @@ class GamePreviewService extends GetxService {
     }
   }
 
-  /// Syncs the active script name and resolves its emulator serial if needed.
+  /// Syncs the active script name, switches per-script serial & window title,
+  /// clears the previous script's stale frame, and immediately captures a fresh frame.
   Future<void> bindScript(String scriptName) async {
     final normalized = scriptName.trim();
     if (normalized.isEmpty || normalized == _activeScript) {
       return;
     }
     _activeScript = normalized;
+    _captureGeneration++;
+    frameBytes.value = null;
+    lastError.value = '';
+
+    // Always sync per-script window title so switching p1 -> p2 immediately follows p2.
+    windowTitle.value = _resolveWindowTitleForScript(normalized);
+
     final cached = _scriptSerialCache[normalized];
     if (cached != null && cached.isNotEmpty) {
       serial.value = cached;
     } else if (mode.value == GamePreviewMode.adb) {
       await resolveSerialForScript(normalized);
     }
+
     if (isStreaming.value) {
       unawaited(captureOnce(normalized));
     }
@@ -184,6 +246,9 @@ class GamePreviewService extends GetxService {
     final normalized = scriptName.trim();
     if (normalized.isNotEmpty) {
       _activeScript = normalized;
+      if (mode.value == GamePreviewMode.windowsWindow) {
+        windowTitle.value = _resolveWindowTitleForScript(normalized);
+      }
     }
     if (kIsWeb) {
       lastError.value = 'Web 端不支持本地游戏画面抓取，请在 Windows 桌面端使用';
@@ -231,6 +296,7 @@ class GamePreviewService extends GetxService {
     if (_inFlight) {
       return;
     }
+    final generation = _captureGeneration;
     _inFlight = true;
     isCapturing.value = true;
     try {
@@ -238,12 +304,17 @@ class GamePreviewService extends GetxService {
         GamePreviewMode.adb => await _captureViaAdb(scriptName),
         GamePreviewMode.windowsWindow => await _captureViaWindowsWindow(),
       };
+      if (generation != _captureGeneration) {
+        return;
+      }
       if (bytes != null && bytes.length > 16) {
         frameBytes.value = bytes;
         lastError.value = '';
       }
     } catch (error) {
-      lastError.value = error.toString().replaceFirst('Exception: ', '');
+      if (generation == _captureGeneration) {
+        lastError.value = error.toString().replaceFirst('Exception: ', '');
+      }
     } finally {
       _inFlight = false;
       isCapturing.value = false;
@@ -286,11 +357,11 @@ class GamePreviewService extends GetxService {
     final rootPath =
         (_storage.read(StorageKey.rootPathServer.name) ?? '').toString().trim();
     if (rootPath.isNotEmpty) {
-        final candidates = [
-          '$rootPath\\toolkit\\Lib\\site-packages\\adbutils\\binaries\\adb.exe',
-          '$rootPath\\toolkit\\adb\\adb.exe',
-          '$rootPath\\bin\\adb\\adb.exe',
-        ];
+      final candidates = [
+        '$rootPath\\toolkit\\Lib\\site-packages\\adbutils\\binaries\\adb.exe',
+        '$rootPath\\toolkit\\adb\\adb.exe',
+        '$rootPath\\bin\\adb\\adb.exe',
+      ];
       for (final candidate in candidates) {
         if (File(candidate).existsSync()) {
           return candidate;
@@ -328,7 +399,6 @@ class GamePreviewService extends GetxService {
       throw Exception('未收到有效画面数据，请确认模拟器已运行');
     }
     final bytes = Uint8List.fromList(raw);
-    // Validate PNG signature (89 50 4E 47)
     if (bytes[0] != 0x89 ||
         bytes[1] != 0x50 ||
         bytes[2] != 0x4E ||
@@ -360,7 +430,11 @@ public class WinCap {
 }
 "@
 \$kw = '$escaped'
-\$proc = Get-Process | Where-Object { \$_.MainWindowHandle -ne 0 -and \$_.MainWindowTitle -like "*\$kw*" } | Select-Object -First 1
+\$procs = Get-Process | Where-Object { \$_.MainWindowHandle -ne 0 -and \$_.MainWindowTitle -ne '' }
+\$proc = \$procs | Where-Object { \$_.MainWindowTitle -eq \$kw } | Select-Object -First 1
+if (-not \$proc) {
+  \$proc = \$procs | Where-Object { \$_.MainWindowTitle -like "*\$kw*" } | Select-Object -First 1
+}
 if (-not \$proc) { Write-Error "WINDOW_NOT_FOUND"; exit 2 }
 \$hwnd = \$proc.MainWindowHandle
 if ([WinCap]::IsIconic(\$hwnd)) { Write-Error "WINDOW_MINIMIZED"; exit 3 }
@@ -389,7 +463,7 @@ if (-not \$ok) { [WinCap]::PrintWindow(\$hwnd, \$hdc, 0) | Out-Null }
     ).timeout(const Duration(seconds: 6));
 
     if (result.exitCode == 2) {
-      throw Exception('未找到标题包含「$titleKeyword」的窗口');
+      throw Exception('未找到标题为「$titleKeyword」的窗口');
     }
     if (result.exitCode == 3) {
       throw Exception('游戏窗口已最小化，请还原窗口（可被遮挡但不能最小化）');

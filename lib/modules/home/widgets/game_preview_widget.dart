@@ -440,7 +440,7 @@ class _GamePreviewModalDialogState extends State<_GamePreviewModalDialog> {
                           labelText: '游戏窗口标题关键词 (默认 阴阳师)',
                           border: OutlineInputBorder(),
                         ),
-                        onChanged: _service.setWindowTitle,
+                        onChanged: (v) => _service.setWindowTitle(v, scriptName: widget.scriptName),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -448,7 +448,7 @@ class _GamePreviewModalDialogState extends State<_GamePreviewModalDialog> {
                       tooltip: '从当前窗口选择',
                       onSelected: (title) {
                         _windowCtrl.text = title;
-                        _service.setWindowTitle(title);
+                        _service.setWindowTitle(title, scriptName: widget.scriptName);
                         unawaited(_service.captureOnce(widget.scriptName));
                       },
                       itemBuilder: (_) => windows
