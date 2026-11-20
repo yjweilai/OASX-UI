@@ -8,7 +8,6 @@ import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:oasx/api/api_client.dart';
 import 'package:oasx/modules/common/models/storage_key.dart';
-import 'package:oasx/modules/settings/controllers/settings_controller.dart';
 
 /// Capture source mode for live game screen preview.
 enum GamePreviewMode {
@@ -284,18 +283,17 @@ class GamePreviewService extends GetxService {
     if (custom.isNotEmpty && File(custom).existsSync()) {
       return custom;
     }
-    if (Get.isRegistered<SettingsController>()) {
-      final rootPath = Get.find<SettingsController>().rootPathServer.value.trim();
-      if (rootPath.isNotEmpty) {
+    final rootPath =
+        (_storage.read(StorageKey.rootPathServer.name) ?? '').toString().trim();
+    if (rootPath.isNotEmpty) {
         final candidates = [
           '$rootPath\\toolkit\\Lib\\site-packages\\adbutils\\binaries\\adb.exe',
           '$rootPath\\toolkit\\adb\\adb.exe',
           '$rootPath\\bin\\adb\\adb.exe',
         ];
-        for (final candidate in candidates) {
-          if (File(candidate).existsSync()) {
-            return candidate;
-          }
+      for (final candidate in candidates) {
+        if (File(candidate).existsSync()) {
+          return candidate;
         }
       }
     }
