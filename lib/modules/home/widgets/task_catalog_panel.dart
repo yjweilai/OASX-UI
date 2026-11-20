@@ -19,6 +19,7 @@ class TaskCatalogPanel extends StatefulWidget {
     required this.onQuickRun,
     required this.onQuickWait,
     this.inlineParameters = true,
+    this.flatStyle = false,
   });
 
   final HomeDashboardController controller;
@@ -27,6 +28,7 @@ class TaskCatalogPanel extends StatefulWidget {
   final Future<void> Function(String taskName) onQuickRun;
   final Future<void> Function(String taskName) onQuickWait;
   final bool inlineParameters;
+  final bool flatStyle;
 
   @override
   State<TaskCatalogPanel> createState() => _TaskCatalogPanelState();
@@ -120,7 +122,7 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
                 controller: _scrollController,
                 itemCount: sections.length,
                 separatorBuilder: (context, index) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: EdgeInsets.symmetric(vertical: widget.flatStyle ? 0 : 10),
                   child: Divider(
                     height: 1,
                     thickness: 1,
@@ -151,6 +153,7 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
                   ),
                   dragEnabled: widget.controller.canUseDesktopDragCopy,
                   activeDragPayload: dragPayload,
+                  flatStyle: widget.flatStyle,
                 ),
               );
             },
@@ -169,7 +172,7 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
         hintText: I18n.taskSearchHint.tr,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: widget.flatStyle ? BorderRadius.zero : BorderRadius.circular(10),
         ),
       ),
       onChanged: (value) => setState(() {
@@ -557,6 +560,7 @@ class _CatalogSectionCard extends StatelessWidget {
     required this.canQuickScheduleTask,
     required this.dragEnabled,
     required this.activeDragPayload,
+    this.flatStyle = false,
   });
 
   final HomeDashboardController controller;
@@ -574,6 +578,7 @@ class _CatalogSectionCard extends StatelessWidget {
   final bool Function(String taskName) canQuickScheduleTask;
   final bool dragEnabled;
   final ConfigDragPayload? activeDragPayload;
+  final bool flatStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -587,16 +592,23 @@ class _CatalogSectionCard extends StatelessWidget {
         false;
     return Card(
       margin: EdgeInsets.zero,
+      elevation: 0,
       clipBehavior: Clip.antiAlias,
       color: isDraggingGroup
           ? scheme.primaryContainer.withValues(alpha: 0.35)
-          : effectiveExpanded
-              ? cardColor
-              : scheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.7)),
-      ),
+          : flatStyle
+              ? Colors.transparent
+              : effectiveExpanded
+                  ? cardColor
+                  : scheme.surfaceContainerLow,
+      shape: flatStyle
+          ? const RoundedRectangleBorder(borderRadius: BorderRadius.zero)
+          : RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                color: scheme.outlineVariant.withValues(alpha: 0.7),
+              ),
+            ),
       child: Column(
         children: [
           InkWell(

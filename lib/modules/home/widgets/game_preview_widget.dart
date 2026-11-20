@@ -12,9 +12,11 @@ class GamePreviewThumbnail extends StatefulWidget {
   const GamePreviewThumbnail({
     super.key,
     required this.scriptName,
+    this.squareBorder = false,
   });
 
   final String scriptName;
+  final bool squareBorder;
 
   @override
   State<GamePreviewThumbnail> createState() => _GamePreviewThumbnailState();
@@ -54,14 +56,15 @@ class _GamePreviewThumbnailState extends State<GamePreviewThumbnail> {
         final isCapturing = _service.isCapturing.value;
         final errorText = _service.lastError.value;
 
+        final radius = widget.squareBorder ? BorderRadius.zero : BorderRadius.circular(10);
         return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: radius,
           child: Container(
             decoration: BoxDecoration(
               color: isDark
                   ? Colors.black.withValues(alpha: 0.32)
                   : Colors.black.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: radius,
               border: Border.all(
                 color: scheme.outlineVariant.withValues(alpha: 0.55),
               ),

@@ -24,6 +24,7 @@ enum StorageKey {
   skinCardOpacity,
   skinCustomDarkMode,
   skinTextColorId,
+  skinTypographyConfig,
   skinImageAlignX,
   skinImageAlignY,
   bentoColumnRatios,

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
+import 'package:oasx/modules/common/widgets/styled_typography_text.dart';
 
 /// Opens the frosted-glass skin selector dialog with preset colors,
 /// custom images (auto-backed up to `skins/`), custom text color,
@@ -203,6 +204,60 @@ class _SkinPickerDialog extends StatelessWidget {
                                   );
                                 }).toList(),
                               ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            SizedBox(
+                              width: 76,
+                              child: Text(
+                                '字体排版',
+                                style: theme.textTheme.labelMedium?.copyWith(
+                                  color: mutedColor,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Obx(() {
+                                final cfg =
+                                    _themeService.typographyConfig.value;
+                                return Row(
+                                  children: [
+                                    OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        visualDensity: VisualDensity.compact,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                      ),
+                                      onPressed: () => showDialog<void>(
+                                        context: context,
+                                        builder: (_) =>
+                                            const _TypographySettingsDialog(),
+                                      ),
+                                      icon: const Icon(
+                                        Icons.text_fields_rounded,
+                                        size: 16,
+                                      ),
+                                      label: const Text('字号与加粗'),
+                                    ),
+                                    if (!cfg.isDefault) ...[
+                                      const SizedBox(width: 8),
+                                      TextButton(
+                                        style: TextButton.styleFrom(
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                        onPressed:
+                                            _themeService.resetTypography,
+                                        child: const Text('恢复默认'),
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              }),
                             ),
                           ],
                         ),
@@ -683,6 +738,220 @@ class _SkinSwatch extends StatelessWidget {
               )
             : null,
       ),
+    );
+  }
+}
+
+class _TypographySettingsDialog extends StatelessWidget {
+  const _TypographySettingsDialog();
+
+  ThemeService get _themeService => Get.find<ThemeService>();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final panelColor =
+        isDark ? const Color(0xEC1A2028) : const Color(0xF5FFFFFF);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.14)
+        : const Color(0xFFE2E6EE);
+    final textColor = isDark ? Colors.white : const Color(0xFF111827);
+    final mutedColor = isDark ? Colors.white70 : const Color(0xFF6B7280);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            width: 440,
+            decoration: BoxDecoration(
+              color: panelColor,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: borderColor),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Obx(() {
+                final cfg = _themeService.typographyConfig.value;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.text_fields_rounded,
+                          size: 20,
+                          color: scheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '字号与加粗设置',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: textColor,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: '关闭',
+                          visualDensity: VisualDensity.compact,
+                          color: mutedColor,
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded, size: 20),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.black.withValues(alpha: 0.04),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: StyledTypographyText(
+                        '预览：今日运行 8h 37m · INFO 12:03 探索',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: textColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _TypographyAxisRow(
+                      label: '汉字',
+                      scale: cfg.cjkScale,
+                      bold: cfg.cjkBold,
+                      mutedColor: mutedColor,
+                      onScaleChanged: (v) => _themeService
+                          .updateTypography(cfg.copyWith(cjkScale: v)),
+                      onBoldChanged: (v) => _themeService
+                          .updateTypography(cfg.copyWith(cjkBold: v)),
+                    ),
+                    const SizedBox(height: 8),
+                    _TypographyAxisRow(
+                      label: '英文',
+                      scale: cfg.latinScale,
+                      bold: cfg.latinBold,
+                      mutedColor: mutedColor,
+                      onScaleChanged: (v) => _themeService
+                          .updateTypography(cfg.copyWith(latinScale: v)),
+                      onBoldChanged: (v) => _themeService
+                          .updateTypography(cfg.copyWith(latinBold: v)),
+                    ),
+                    const SizedBox(height: 8),
+                    _TypographyAxisRow(
+                      label: '数字',
+                      scale: cfg.digitScale,
+                      bold: cfg.digitBold,
+                      mutedColor: mutedColor,
+                      onScaleChanged: (v) => _themeService
+                          .updateTypography(cfg.copyWith(digitScale: v)),
+                      onBoldChanged: (v) => _themeService
+                          .updateTypography(cfg.copyWith(digitBold: v)),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: cfg.isDefault
+                              ? null
+                              : _themeService.resetTypography,
+                          icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                          label: const Text('恢复默认'),
+                        ),
+                        const Spacer(),
+                        FilledButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('完成'),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TypographyAxisRow extends StatelessWidget {
+  const _TypographyAxisRow({
+    required this.label,
+    required this.scale,
+    required this.bold,
+    required this.mutedColor,
+    required this.onScaleChanged,
+    required this.onBoldChanged,
+  });
+
+  final String label;
+  final double scale;
+  final bool bold;
+  final Color mutedColor;
+  final ValueChanged<double> onScaleChanged;
+  final ValueChanged<bool> onBoldChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        SizedBox(
+          width: 40,
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(color: mutedColor),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.5),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+            ),
+            child: Slider(
+              min: 0.8,
+              max: 1.4,
+              divisions: 12,
+              value: scale.clamp(0.8, 1.4),
+              onChanged: onScaleChanged,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 42,
+          child: Text(
+            '${(scale * 100).round()}%',
+            textAlign: TextAlign.end,
+            style: theme.textTheme.labelSmall?.copyWith(color: mutedColor),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FilterChip(
+          label: const Text('加粗', style: TextStyle(fontSize: 12)),
+          selected: bold,
+          showCheckmark: false,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onSelected: onBoldChanged,
+        ),
+      ],
     );
   }
 }

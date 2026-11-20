@@ -62,7 +62,7 @@ class SkinBackgroundShell extends StatelessWidget {
         cardTheme: baseTheme.cardTheme.copyWith(
           color: resolvedCardColor,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.zero,
             side: BorderSide(
               color: skin.cardBorderColor ??
                   baseTheme.colorScheme.outlineVariant.withValues(alpha: 0.6),

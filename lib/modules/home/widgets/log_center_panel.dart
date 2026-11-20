@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:oasx/modules/log/script_log_controller.dart';
+import 'package:oasx/modules/common/widgets/styled_typography_text.dart';
+import 'package:oasx/service/theme_service.dart';
 import 'package:oasx/translation/i18n_content.dart';
 
 class LogCenterPanel extends StatefulWidget {
@@ -94,6 +96,7 @@ class LogCenterPanelState extends State<LogCenterPanel> {
 
   /// Cache of parsed log entries for incremental rendering.
   final List<_CachedLogEntry> _cachedEntries = <_CachedLogEntry>[];
+  String _lastTypographyKey = '';
 
   String get _effectiveLevel => widget.externalLevelFilter ?? _level;
 
@@ -256,6 +259,15 @@ class LogCenterPanelState extends State<LogCenterPanel> {
       if (visibleEntries.isEmpty) {
         return Center(child: Text(I18n.homeLogEmptyFiltered.tr));
       }
+      final typography = Get.isRegistered<ThemeService>()
+          ? Get.find<ThemeService>().typographyConfig.value
+          : const AppTypographyConfig();
+      if (_lastTypographyKey != typography.cacheKey) {
+        _lastTypographyKey = typography.cacheKey;
+        for (final entry in _cachedEntries) {
+          entry.spans = null;
+        }
+      }
       final textStyle = _defaultTextStyle(context);
       return SelectionArea(
         child: NotificationListener<UserScrollNotification>(
@@ -276,7 +288,7 @@ class LogCenterPanelState extends State<LogCenterPanel> {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 1),
                   child: _LogSelectableText(
-                    spans: _resolveSpans(entry),
+                    spans: _resolveSpans(entry, textStyle, typography),
                     style: textStyle,
                   ),
                 );
@@ -354,8 +366,13 @@ class LogCenterPanelState extends State<LogCenterPanel> {
   }
 
   /// Returns cached spans for the log line, building once when needed.
-  List<InlineSpan> _resolveSpans(_CachedLogEntry entry) {
-    entry.spans ??= _buildHighlightedLine(_resolveNormalized(entry));
+  List<InlineSpan> _resolveSpans(
+    _CachedLogEntry entry,
+    TextStyle baseStyle,
+    AppTypographyConfig typography,
+  ) {
+    entry.spans ??=
+        _buildHighlightedLine(_resolveNormalized(entry), baseStyle, typography);
     return entry.spans!;
   }
 
@@ -370,10 +387,29 @@ class LogCenterPanelState extends State<LogCenterPanel> {
     );
   }
 
-  List<InlineSpan> _buildHighlightedLine(String raw) {
+  List<InlineSpan> _buildHighlightedLine(
+    String raw,
+    TextStyle baseStyle,
+    AppTypographyConfig typography,
+  ) {
     final spans = <InlineSpan>[];
     final patterns = _highlightPatterns;
+    final plainBuffer = StringBuffer();
     var cursor = 0;
+
+    void flushPlain() {
+      if (plainBuffer.isEmpty) {
+        return;
+      }
+      final chunk = plainBuffer.toString();
+      plainBuffer.clear();
+      if (typography.isDefault) {
+        spans.add(TextSpan(text: chunk));
+      } else {
+        spans.addAll(buildTypedTextSpans(chunk, baseStyle, typography));
+      }
+    }
+
     while (cursor < raw.length) {
       _LogHighlightMatch? match;
       for (final pattern in patterns) {
@@ -390,16 +426,22 @@ class LogCenterPanelState extends State<LogCenterPanel> {
       }
       if (match == null) {
         final nextCursor = _nextCodePointBoundary(raw, cursor);
-        spans.add(TextSpan(text: raw.substring(cursor, nextCursor)));
+        plainBuffer.write(raw.substring(cursor, nextCursor));
         cursor = nextCursor;
         continue;
       }
-      spans.add(TextSpan(
-        text: raw.substring(match.start, match.end),
-        style: match.style,
-      ));
+      flushPlain();
+      final token = raw.substring(match.start, match.end);
+      if (typography.isDefault) {
+        spans.add(TextSpan(text: token, style: match.style));
+      } else {
+        spans.addAll(
+          buildTypedTextSpans(token, baseStyle.merge(match.style), typography),
+        );
+      }
       cursor = match.end;
     }
+    flushPlain();
     return spans;
   }
 

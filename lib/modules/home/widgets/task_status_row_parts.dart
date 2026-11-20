@@ -21,7 +21,7 @@ class _TaskMeta extends StatelessWidget {
       sourceConfig: sourceScriptName,
       taskName: task.name,
     );
-    final title = Text(
+    final title = StyledTypographyText(
       task.name.tr,
       maxLines: 1,
       overflow: TextOverflow.visible,
@@ -45,15 +45,25 @@ class _TaskMeta extends StatelessWidget {
             : title,
         if (task.timeText.isNotEmpty) ...[
           const SizedBox(height: 2),
-          DateTimePicker(
-            value: task.timeText,
-            notHoverStyle: Theme.of(context).textTheme.labelMedium,
-            hoverStyle: Theme.of(context)
-                .textTheme
-                .labelMedium
-                ?.copyWith(color: Theme.of(context).colorScheme.primary),
-            onChange: (value) => unawaited(onSetNextRun(task.name, value)),
-          ),
+          Obx(() {
+            final cfg = Get.isRegistered<ThemeService>()
+                ? Get.find<ThemeService>().typographyConfig.value
+                : const AppTypographyConfig();
+            final baseLabel = Theme.of(context).textTheme.labelMedium;
+            final baseSize = baseLabel?.fontSize ?? 12.0;
+            final styledLabel = baseLabel?.copyWith(
+              fontSize: (baseSize * cfg.digitScale).clamp(9.0, 28.0).toDouble(),
+              fontWeight: cfg.digitBold ? FontWeight.w700 : baseLabel.fontWeight,
+            );
+            return DateTimePicker(
+              value: task.timeText,
+              notHoverStyle: styledLabel,
+              hoverStyle: styledLabel?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              onChange: (value) => unawaited(onSetNextRun(task.name, value)),
+            );
+          }),
         ],
       ],
     );

@@ -5,9 +5,11 @@ import 'package:get/get.dart';
 import 'package:oasx/modules/args/index.dart';
 import 'package:oasx/modules/common/models/config_drag_payload.dart';
 import 'package:oasx/modules/common/widgets/drag_copy_feedback.dart';
+import 'package:oasx/modules/common/widgets/styled_typography_text.dart';
 import 'package:oasx/modules/home/controllers/dashboard_controller.dart';
 import 'package:oasx/modules/home/widgets/split_scroll_row.dart';
 import 'package:oasx/modules/home/widgets/task_status_swipe_container.dart';
+import 'package:oasx/service/theme_service.dart';
 import 'package:oasx/translation/i18n_content.dart';
 
 part 'task_status_row_parts.dart';
@@ -51,6 +53,7 @@ class TaskStatusRow extends StatelessWidget {
     required this.dragEnabled,
     required this.swipeEnabled,
     required this.activeDragPayload,
+    this.flatStyle = false,
   });
 
   final HomeDashboardController controller;
@@ -66,27 +69,35 @@ class TaskStatusRow extends StatelessWidget {
   final bool dragEnabled;
   final bool swipeEnabled;
   final ConfigDragPayload? activeDragPayload;
-  static const double _actionExtent = 132;
+  final bool flatStyle;
+  static const double _actionExtent = 124;
 
   @override
   Widget build(BuildContext context) {
-    final rowBackground = _rowBackground(context);
+    final rowBackground = flatStyle ? Colors.transparent : _rowBackground(context);
+    final trailingBg = flatStyle ? Colors.transparent : rowBackground;
     return TaskStatusSwipeContainer(
       enabled: swipeEnabled,
       onConfirmDismiss: () => onDisableTask(task.name),
       onDismissed: () => onDismissed(task.rowId),
       child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: _foregroundColor(context, rowBackground),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _borderColor(context)),
-        ),
+        decoration: flatStyle
+            ? BoxDecoration(
+                color: _foregroundColor(context, Colors.transparent),
+              )
+            : BoxDecoration(
+                color: _foregroundColor(context, rowBackground),
+                borderRadius: BorderRadius.zero,
+                border: Border.all(color: _borderColor(context)),
+              ),
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: flatStyle
+              ? const EdgeInsets.symmetric(horizontal: 6, vertical: 7)
+              : const EdgeInsets.all(10),
           child: SplitScrollRow(
-            minHeight: 40,
+            minHeight: 38,
             trailingExtent: _actionExtent,
-            trailingBackgroundColor: rowBackground,
+            trailingBackgroundColor: trailingBg,
             trailing: _TaskActionBar(
               onQuickRun: canQuickSchedule ? () => onQuickRun(task.name) : null,
               onQuickWait:
@@ -97,7 +108,7 @@ class TaskStatusRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _TaskTypeIcon(type: task.type),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _TaskMeta(
                   controller: controller,
                   sourceScriptName: sourceScriptName,

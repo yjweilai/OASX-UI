@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:oasx/modules/common/widgets/styled_typography_text.dart';
 import 'package:oasx/modules/home/models/config_model.dart';
 
 /// Displays an 8-day (today + next 7 days) scheduled task count distribution card.
@@ -72,14 +73,14 @@ class TaskDateDistributionCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Text(
+                  StyledTypographyText(
                     '任务日期分布',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
+                  StyledTypographyText(
                     '未来7天',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
@@ -106,7 +107,7 @@ class TaskDateDistributionCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                   ],
-                  Text(
+                  StyledTypographyText(
                     '共$totalInWindow项',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
@@ -134,7 +135,7 @@ class TaskDateDistributionCard extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
+                          StyledTypographyText(
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -172,7 +173,7 @@ class TaskDateDistributionCard extends StatelessWidget {
                                         : Colors.transparent,
                                   ),
                                 ),
-                                child: Text(
+                                child: StyledTypographyText(
                                   '$count',
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: count > 0 || isSelected

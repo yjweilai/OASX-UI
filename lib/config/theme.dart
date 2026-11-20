@@ -54,7 +54,7 @@ ThemeData lightTheme = ThemeData(
     elevation: 0,
     margin: EdgeInsets.zero,
     shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.zero,
       side: const BorderSide(color: Color(0xFFE6E8EE)),
     ),
   ),
@@ -75,7 +75,7 @@ ThemeData darkTheme = ThemeData(
     elevation: 0,
     margin: EdgeInsets.zero,
     shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.zero,
       side: const BorderSide(color: Color(0xFF32353E)),
     ),
   ),

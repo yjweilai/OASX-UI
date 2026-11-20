@@ -10,6 +10,78 @@ import 'package:oasx/config/theme.dart';
 import 'package:oasx/modules/common/models/storage_key.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// Stores independent font scale & bold settings for CJK, Latin, and digits.
+class AppTypographyConfig {
+  const AppTypographyConfig({
+    this.cjkScale = 1.0,
+    this.cjkBold = false,
+    this.latinScale = 1.0,
+    this.latinBold = false,
+    this.digitScale = 1.0,
+    this.digitBold = false,
+  });
+
+  final double cjkScale;
+  final bool cjkBold;
+  final double latinScale;
+  final bool latinBold;
+  final double digitScale;
+  final bool digitBold;
+
+  bool get isDefault =>
+      (cjkScale - 1.0).abs() < 0.005 &&
+      !cjkBold &&
+      (latinScale - 1.0).abs() < 0.005 &&
+      !latinBold &&
+      (digitScale - 1.0).abs() < 0.005 &&
+      !digitBold;
+
+  String get cacheKey =>
+      '${cjkScale.toStringAsFixed(2)}_$cjkBold|'
+      '${latinScale.toStringAsFixed(2)}_$latinBold|'
+      '${digitScale.toStringAsFixed(2)}_$digitBold';
+
+  AppTypographyConfig copyWith({
+    double? cjkScale,
+    bool? cjkBold,
+    double? latinScale,
+    bool? latinBold,
+    double? digitScale,
+    bool? digitBold,
+  }) {
+    return AppTypographyConfig(
+      cjkScale: (cjkScale ?? this.cjkScale).clamp(0.8, 1.4).toDouble(),
+      cjkBold: cjkBold ?? this.cjkBold,
+      latinScale: (latinScale ?? this.latinScale).clamp(0.8, 1.4).toDouble(),
+      latinBold: latinBold ?? this.latinBold,
+      digitScale: (digitScale ?? this.digitScale).clamp(0.8, 1.4).toDouble(),
+      digitBold: digitBold ?? this.digitBold,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'cjkScale': cjkScale,
+        'cjkBold': cjkBold,
+        'latinScale': latinScale,
+        'latinBold': latinBold,
+        'digitScale': digitScale,
+        'digitBold': digitBold,
+      };
+
+  static AppTypographyConfig fromJson(Map<String, dynamic> json) {
+    double readScale(dynamic v) =>
+        v is num ? v.toDouble().clamp(0.8, 1.4).toDouble() : 1.0;
+    return AppTypographyConfig(
+      cjkScale: readScale(json['cjkScale']),
+      cjkBold: json['cjkBold'] == true,
+      latinScale: readScale(json['latinScale']),
+      latinBold: json['latinBold'] == true,
+      digitScale: readScale(json['digitScale']),
+      digitBold: json['digitBold'] == true,
+    );
+  }
+}
+
 /// Describes a selectable text color preset for transparent/custom skins.
 class AppTextColorOption {
   const AppTextColorOption({
@@ -162,6 +234,7 @@ class ThemeService extends GetxService {
   final skinCardOpacity = 0.48.obs;
   final customSkinDarkMode = false.obs;
   final skinTextColorId = 'auto'.obs;
+  final typographyConfig = const AppTypographyConfig().obs;
   final skinImageAlignX = 0.0.obs;
   final skinImageAlignY = 0.0.obs;
 
@@ -214,6 +287,7 @@ class ThemeService extends GetxService {
   @override
   void onInit() {
     _loadCustomSkins();
+    _loadTypographyConfig();
     final savedOpacity = _storage.read(StorageKey.skinOverlayOpacity.name);
     if (savedOpacity is num) {
       skinOverlayOpacity.value = savedOpacity.toDouble().clamp(0.0, 0.85);
@@ -280,6 +354,32 @@ class ThemeService extends GetxService {
       _storage.write(StorageKey.dark.name, dark);
       Get.changeThemeMode(themeMode);
     }
+  }
+
+  void updateTypography(AppTypographyConfig next) {
+    typographyConfig.value = next;
+    _storage.write(
+      StorageKey.skinTypographyConfig.name,
+      jsonEncode(next.toJson()),
+    );
+  }
+
+  void resetTypography() {
+    updateTypography(const AppTypographyConfig());
+  }
+
+  void _loadTypographyConfig() {
+    final raw = _storage.read(StorageKey.skinTypographyConfig.name);
+    if (raw == null) {
+      return;
+    }
+    try {
+      final decoded = raw is String ? jsonDecode(raw) : raw;
+      if (decoded is Map) {
+        typographyConfig.value =
+            AppTypographyConfig.fromJson(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {}
   }
 
   void setSkinTextColor(String colorId) {
