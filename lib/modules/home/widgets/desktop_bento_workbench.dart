@@ -9,6 +9,7 @@ import 'package:oasx/modules/home/controllers/statistics_controller.dart';
 import 'package:oasx/modules/home/models/config_model.dart';
 import 'package:oasx/modules/home/models/home_workbench_layout.dart';
 import 'package:oasx/modules/home/widgets/desktop_config_strip.dart';
+import 'package:oasx/modules/home/widgets/game_preview_widget.dart';
 import 'package:oasx/modules/home/widgets/log_center_panel.dart';
 import 'package:oasx/modules/home/widgets/statistics_panel.dart';
 import 'package:oasx/modules/home/widgets/task_catalog_panel.dart';
@@ -673,126 +674,178 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Column(
+        padding: const EdgeInsets.all(10),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                _RightTabPill(
-                  label: I18n.log.tr,
-                  selected: isLogs,
-                  onTap: () => widget.controller
-                      .setActiveWorkbenchSidebarTabValue(HomeWorkbenchTab.logs),
-                ),
-                const SizedBox(width: 8),
-                _RightTabPill(
-                  label: I18n.homeStatsTab.tr,
-                  selected: !isLogs,
-                  onTap: () => widget.controller
-                      .setActiveWorkbenchSidebarTabValue(
-                          HomeWorkbenchTab.stats),
-                ),
-              ],
+            // Left: embedded live game screen preview
+            Expanded(
+              flex: 52,
+              child: GamePreviewThumbnail(scriptName: script.name),
             ),
-            const Spacer(),
-            if (isLogs)
-              Row(
+            const SizedBox(width: 10),
+            // Right: stacked Log/Stats tabs, Info/Error toggle, and actions
+            Expanded(
+              flex: 48,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF2B2E36)
-                          : const Color(0xFFF3F4F6),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: scheme.outlineVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _SegmentButton(
-                          label: '信息',
-                          selected: _logLevelFilter != 'ERROR_GROUP',
-                          onTap: () => setState(() {
-                            _logLevelFilter = 'ALL';
-                          }),
+                        _RightTabPill(
+                          label: I18n.log.tr,
+                          selected: isLogs,
+                          onTap: () => widget.controller
+                              .setActiveWorkbenchSidebarTabValue(
+                                  HomeWorkbenchTab.logs),
                         ),
-                        _SegmentButton(
-                          label: '错误',
-                          selected: _logLevelFilter == 'ERROR_GROUP',
-                          onTap: () => setState(() {
-                            _logLevelFilter = 'ERROR_GROUP';
-                          }),
+                        const SizedBox(width: 6),
+                        _RightTabPill(
+                          label: I18n.homeStatsTab.tr,
+                          selected: !isLogs,
+                          onTap: () => widget.controller
+                              .setActiveWorkbenchSidebarTabValue(
+                                  HomeWorkbenchTab.stats),
                         ),
                       ],
                     ),
                   ),
-                  const Spacer(),
-                  PopupMenuButton<String>(
-                    tooltip: '日志级别筛选',
-                    initialValue: _logLevelFilter,
-                    onSelected: (value) => setState(() {
-                      _logLevelFilter = value;
-                    }),
-                    itemBuilder: (context) => const [
-                      PopupMenuItem<String>(value: 'ALL', child: Text('ALL')),
-                      PopupMenuItem<String>(value: 'INFO', child: Text('INFO')),
-                      PopupMenuItem<String>(
-                          value: 'WARNING', child: Text('WARNING')),
-                      PopupMenuItem<String>(
-                          value: 'ERROR', child: Text('ERROR')),
-                      PopupMenuItem<String>(
-                          value: 'CRITICAL', child: Text('CRITICAL')),
-                    ],
-                    icon: Icon(
-                      Icons.filter_list_rounded,
-                      size: 19,
-                      color: _logLevelFilter == 'ALL' ? null : scheme.primary,
-                    ),
-                  ),
-                  if (logController != null)
-                    Obx(() {
-                      final autoScroll = logController.autoScroll.value;
-                      return IconButton(
-                        tooltip: I18n.homeLogAutoScroll.tr,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: logController.toggleAutoScroll,
-                        icon: Icon(
-                          autoScroll
-                              ? Icons.bolt_rounded
-                              : Icons.flash_off_rounded,
-                          size: 19,
-                          color: autoScroll ? scheme.primary : null,
+                  if (isLogs) ...[
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.10)
+                              : Colors.black.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: scheme.outlineVariant.withValues(alpha: 0.55),
+                          ),
                         ),
-                      );
-                    })
-                  else
-                    const IconButton(
-                      onPressed: null,
-                      visualDensity: VisualDensity.compact,
-                      icon: Icon(Icons.bolt_rounded, size: 19),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _SegmentButton(
+                              label: '信息',
+                              selected: _logLevelFilter != 'ERROR_GROUP',
+                              onTap: () => setState(() {
+                                _logLevelFilter = 'ALL';
+                              }),
+                            ),
+                            _SegmentButton(
+                              label: '错误',
+                              selected: _logLevelFilter == 'ERROR_GROUP',
+                              onTap: () => setState(() {
+                                _logLevelFilter = 'ERROR_GROUP';
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  IconButton(
-                    tooltip: I18n.copy.tr,
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _logPanelKey.currentState?.copyVisibleLogs(),
-                    icon: const Icon(Icons.content_copy_rounded, size: 18),
-                  ),
-                  IconButton(
-                    tooltip: I18n.clearLog.tr,
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => _logPanelKey.currentState?.clearLogs(),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 19),
-                  ),
-                ],
-              )
-            else
-              Row(
-                children: [
-                  Expanded(
-                    child: Obx(() {
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          PopupMenuButton<String>(
+                            tooltip: '日志级别筛选',
+                            initialValue: _logLevelFilter,
+                            onSelected: (value) => setState(() {
+                              _logLevelFilter = value;
+                            }),
+                            itemBuilder: (context) => const [
+                              PopupMenuItem<String>(
+                                  value: 'ALL', child: Text('ALL')),
+                              PopupMenuItem<String>(
+                                  value: 'INFO', child: Text('INFO')),
+                              PopupMenuItem<String>(
+                                  value: 'WARNING', child: Text('WARNING')),
+                              PopupMenuItem<String>(
+                                  value: 'ERROR', child: Text('ERROR')),
+                              PopupMenuItem<String>(
+                                  value: 'CRITICAL', child: Text('CRITICAL')),
+                            ],
+                            icon: Icon(
+                              Icons.filter_list_rounded,
+                              size: 18,
+                              color: _logLevelFilter == 'ALL'
+                                  ? null
+                                  : scheme.primary,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 30,
+                              height: 30,
+                            ),
+                          ),
+                          if (logController != null)
+                            Obx(() {
+                              final autoScroll = logController.autoScroll.value;
+                              return SizedBox(
+                                width: 30,
+                                height: 30,
+                                child: IconButton(
+                                  tooltip: I18n.homeLogAutoScroll.tr,
+                                  padding: EdgeInsets.zero,
+                                  onPressed: logController.toggleAutoScroll,
+                                  icon: Icon(
+                                    autoScroll
+                                        ? Icons.bolt_rounded
+                                        : Icons.flash_off_rounded,
+                                    size: 18,
+                                    color: autoScroll ? scheme.primary : null,
+                                  ),
+                                ),
+                              );
+                            })
+                          else
+                            const SizedBox(
+                              width: 30,
+                              height: 30,
+                              child: IconButton(
+                                onPressed: null,
+                                padding: EdgeInsets.zero,
+                                icon: Icon(Icons.bolt_rounded, size: 18),
+                              ),
+                            ),
+                          SizedBox(
+                            width: 30,
+                            height: 30,
+                            child: IconButton(
+                              tooltip: I18n.copy.tr,
+                              padding: EdgeInsets.zero,
+                              onPressed: () =>
+                                  _logPanelKey.currentState?.copyVisibleLogs(),
+                              icon: const Icon(Icons.content_copy_rounded,
+                                  size: 17),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 30,
+                            height: 30,
+                            child: IconButton(
+                              tooltip: I18n.clearLog.tr,
+                              padding: EdgeInsets.zero,
+                              onPressed: () =>
+                                  _logPanelKey.currentState?.clearLogs(),
+                              icon: const Icon(Icons.delete_outline_rounded,
+                                  size: 18),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Obx(() {
                       final dateKey =
                           statsController?.selectedDateKey.value ?? '';
                       final loading =
@@ -804,57 +857,74 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                       final subtitle = loading
                           ? I18n.homeStatsLoadingMessage.tr
                           : (dateKey.isNotEmpty
-                              ? '统计日期：$dateKey${isLocal ? ' · 本地统计' : ''}'
-                              : '统计概览与明细');
+                              ? '$dateKey${isLocal ? ' · 本地' : ''}'
+                              : '统计概览');
                       return Text(
                         subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
+                        style: theme.textTheme.labelSmall?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
                       );
                     }),
-                  ),
-                  Obx(() {
-                    final isLocal =
-                        statsController?.isLocalFallback.value ?? false;
-                    if (!isLocal || statsController == null) {
-                      return const SizedBox.shrink();
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 6,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Obx(() {
+                            final isLocal =
+                                statsController?.isLocalFallback.value ?? false;
+                            if (!isLocal || statsController == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                ),
+                                onPressed: () => _confirmClearLocalStats(
+                                    context, statsController),
+                                icon: const Icon(Icons.delete_outline_rounded,
+                                    size: 14),
+                                label: const Text(
+                                  '清空',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            );
+                          }),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                            ),
+                            onPressed: statsController == null
+                                ? null
+                                : () => statsController.refreshStatistics(),
+                            icon: const Icon(Icons.refresh_rounded, size: 14),
+                            label: const Text(
+                              '刷新',
+                              style: TextStyle(fontSize: 12),
+                            ),
                           ),
-                        ),
-                        onPressed: () =>
-                            _confirmClearLocalStats(context, statsController),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                        label: const Text('清空本地统计'),
-                      ),
-                    );
-                  }),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
+                        ],
                       ),
                     ),
-                    onPressed: statsController == null
-                        ? null
-                        : () => statsController.refreshStatistics(),
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: const Text('刷新'),
-                  ),
+                  ],
                 ],
               ),
+            ),
           ],
         ),
       ),
@@ -1136,7 +1206,7 @@ class _RightTabPill extends StatelessWidget {
     return Material(
       color: selected
           ? scheme.primary.withValues(alpha: isDark ? 0.24 : 0.12)
-          : (isDark ? const Color(0xFF2B2E36) : const Color(0xFFF3F4F6)),
+          : (isDark ? Colors.white.withValues(alpha: 0.10) : Colors.black.withValues(alpha: 0.05)),
       borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -1187,7 +1257,7 @@ class _SegmentButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           color: selected
-              ? (isDark ? const Color(0xFF3A3E4A) : Colors.white)
+              ? (isDark ? Colors.white.withValues(alpha: 0.20) : Colors.white.withValues(alpha: 0.85))
               : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),

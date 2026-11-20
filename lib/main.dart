@@ -8,6 +8,7 @@ import 'package:oasx/config/theme.dart' show darkTheme, lightTheme;
 import 'package:oasx/modules/settings/controllers/settings_controller.dart';
 import 'package:oasx/service/autostart_service.dart';
 import 'package:oasx/service/app_update_service.dart';
+import 'package:oasx/service/game_preview_service.dart';
 import 'package:oasx/service/local_statistics_service.dart';
 import 'package:oasx/service/locale_service.dart';
 import 'package:oasx/service/script_service.dart';
@@ -75,6 +76,7 @@ Future<void> initService() async {
 
   Get.put(SettingsController(), permanent: true);
   Get.put(LocalStatisticsService(), permanent: true);
+  Get.put(GamePreviewService(), permanent: true);
   if (PlatformUtils.isDesktop) {
     Get.put(SystemTrayService(), permanent: true);
   }

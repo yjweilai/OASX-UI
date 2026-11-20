@@ -63,69 +63,70 @@ class _HomeViewState extends State<HomeView> {
 
   @override
   Widget build(BuildContext context) {
-    final body = SkinBackgroundShell(
-      child: SafeArea(
-        child: Stack(
-          children: [
-            _buildDashboardBody(),
-            Obx(() {
-              final message = controller.startupLoadingMessage.value;
-              if (message.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return Positioned.fill(
-                child: ColoredBox(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(
-                          width: 36,
-                          height: 36,
-                          child: CircularProgressIndicator(),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          message.tr,
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ],
-                    ),
+    final content = SafeArea(
+      child: Stack(
+        children: [
+          _buildDashboardBody(),
+          Obx(() {
+            final message = controller.startupLoadingMessage.value;
+            if (message.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black.withValues(alpha: 0.25),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: CircularProgressIndicator(),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        message.tr,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ],
                   ),
                 ),
-              );
-            }),
-          ],
-        ),
+              ),
+            );
+          }),
+        ],
       ),
     );
 
     if (!widget.standalone) {
-      return body;
+      return SkinBackgroundShell(child: content);
     }
 
-    return Scaffold(
-      appBar: buildPlatformAppBar(
-        context,
-        routePath: '/home',
-        trailingActions: PlatformUtils.usesDesktopLayout
-            ? [
-                IconButton(
-                  tooltip: '选择皮肤',
-                  onPressed: () => showSkinPickerDialog(context),
-                  icon: const Icon(Icons.palette_outlined),
-                ),
-                IconButton(
-                  tooltip: I18n.setting.tr,
-                  onPressed: () => Get.toNamed('/settings'),
-                  icon: const Icon(Icons.settings_rounded),
-                ),
-              ]
-            : const [],
+    return SkinBackgroundShell(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: buildPlatformAppBar(
+          context,
+          routePath: '/home',
+          trailingActions: PlatformUtils.usesDesktopLayout
+              ? [
+                  IconButton(
+                    tooltip: '选择皮肤',
+                    onPressed: () => showSkinPickerDialog(context),
+                    icon: const Icon(Icons.palette_outlined),
+                  ),
+                  IconButton(
+                    tooltip: I18n.setting.tr,
+                    onPressed: () => Get.toNamed('/settings'),
+                    icon: const Icon(Icons.settings_rounded),
+                  ),
+                ]
+              : const [],
+        ),
+        body: content,
       ),
-      body: body,
     );
   }
 }

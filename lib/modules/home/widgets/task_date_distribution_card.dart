@@ -154,8 +154,8 @@ class TaskDateDistributionCard extends StatelessWidget {
                                     alpha: isDark ? 0.28 : 0.14,
                                   )
                                 : (isDark
-                                    ? const Color(0xFF2B2E36)
-                                    : const Color(0xFFF3F4F6)),
+                                    ? Colors.white.withValues(alpha: 0.10)
+                                    : Colors.black.withValues(alpha: 0.05)),
                             borderRadius: BorderRadius.circular(10),
                             clipBehavior: Clip.antiAlias,
                             child: InkWell(

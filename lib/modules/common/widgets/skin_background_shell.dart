@@ -6,7 +6,7 @@ import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
 
 /// Renders the active background skin (solid color, gradient, or local image)
-/// and adapts child CardTheme opacity and image alignment dynamically.
+/// and adapts child CardTheme & cardColor opacity dynamically.
 class SkinBackgroundShell extends StatelessWidget {
   const SkinBackgroundShell({
     super.key,
@@ -33,20 +33,24 @@ class SkinBackgroundShell extends StatelessWidget {
           ? baseCardColor.withValues(alpha: cardOpacity)
           : baseCardColor;
 
+      final innerAlpha = (cardOpacity * 0.70).clamp(0.06, 0.85).toDouble();
       final adaptedColorScheme = skin.supportsTranslucentCards
           ? baseTheme.colorScheme.copyWith(
               surfaceContainerHighest: baseTheme
                   .colorScheme.surfaceContainerHighest
-                  .withValues(alpha: (cardOpacity * 0.72).clamp(0.08, 0.85)),
+                  .withValues(alpha: innerAlpha),
               surfaceContainerHigh: baseTheme.colorScheme.surfaceContainerHigh
-                  .withValues(alpha: (cardOpacity * 0.72).clamp(0.08, 0.85)),
+                  .withValues(alpha: innerAlpha),
               surfaceContainer: baseTheme.colorScheme.surfaceContainer
-                  .withValues(alpha: (cardOpacity * 0.72).clamp(0.08, 0.85)),
+                  .withValues(alpha: innerAlpha),
+              surfaceContainerLow: baseTheme.colorScheme.surfaceContainerLow
+                  .withValues(alpha: innerAlpha),
             )
           : baseTheme.colorScheme;
 
       final adaptedTheme = baseTheme.copyWith(
         colorScheme: adaptedColorScheme,
+        cardColor: resolvedCardColor,
         cardTheme: baseTheme.cardTheme.copyWith(
           color: resolvedCardColor,
           shape: RoundedRectangleBorder(

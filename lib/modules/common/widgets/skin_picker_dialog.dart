@@ -8,7 +8,8 @@ import 'package:get/get.dart';
 import 'package:oasx/service/theme_service.dart';
 
 /// Opens the frosted-glass skin selector dialog with preset colors,
-/// custom images, card transparency, and background focal position controls.
+/// custom images, light/dark UI style toggle, card transparency,
+/// and background focal position controls.
 Future<void> showSkinPickerDialog(BuildContext context) {
   return showDialog<void>(
     context: context,
@@ -60,7 +61,7 @@ class _SkinPickerDialog extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
             width: 410,
-            constraints: const BoxConstraints(maxHeight: 620),
+            constraints: const BoxConstraints(maxHeight: 650),
             decoration: BoxDecoration(
               color: panelColor,
               borderRadius: BorderRadius.circular(18),
@@ -148,6 +149,7 @@ class _SkinPickerDialog extends StatelessWidget {
                   }
                   final cardOpacity = _themeService.skinCardOpacity.value;
                   final overlayOpacity = _themeService.skinOverlayOpacity.value;
+                  final customDark = _themeService.customSkinDarkMode.value;
                   final alignX = _themeService.skinImageAlignX.value;
                   final alignY = _themeService.skinImageAlignY.value;
 
@@ -159,6 +161,43 @@ class _SkinPickerDialog extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (active.isCustomImage) ...[
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 76,
+                                child: Text(
+                                  '界面风格',
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: mutedColor,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    ChoiceChip(
+                                      label: const Text('浅色文字框'),
+                                      selected: !customDark,
+                                      visualDensity: VisualDensity.compact,
+                                      onSelected: (_) => _themeService
+                                          .setCustomSkinDarkMode(false),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ChoiceChip(
+                                      label: const Text('深色文字框'),
+                                      selected: customDark,
+                                      visualDensity: VisualDensity.compact,
+                                      onSelected: (_) => _themeService
+                                          .setCustomSkinDarkMode(true),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                        ],
                         _SliderRow(
                           label: 'UI 框透明度',
                           value: cardOpacity,
@@ -323,7 +362,8 @@ class _CompactAxisSlider extends StatelessWidget {
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 2.5,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5.5),
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 5.5),
                 overlayShape:
                     const RoundSliderOverlayShape(overlayRadius: 10),
               ),
@@ -379,8 +419,7 @@ class _AlignmentNineGrid extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final x in _stops)
-                  _buildCell(x, y, scheme),
+                for (final x in _stops) _buildCell(x, y, scheme),
               ],
             ),
         ],

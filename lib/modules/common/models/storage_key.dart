@@ -22,7 +22,12 @@ enum StorageKey {
   customSkins,
   skinOverlayOpacity,
   skinCardOpacity,
+  skinCustomDarkMode,
   skinImageAlignX,
   skinImageAlignY,
   bentoColumnRatios,
+  gamePreviewMode,
+  gamePreviewAdbPath,
+  gamePreviewWindowTitle,
+  gamePreviewIntervalSeconds,
 }

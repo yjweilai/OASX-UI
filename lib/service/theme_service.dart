@@ -119,8 +119,9 @@ class ThemeService extends GetxService {
   final _color = ColorSeed.baseColor.color.obs;
   final activeSkinId = kPureWhiteId.obs;
   final customSkins = <AppSkinPreset>[].obs;
-  final skinOverlayOpacity = 0.25.obs;
-  final skinCardOpacity = 0.52.obs;
+  final skinOverlayOpacity = 0.20.obs;
+  final skinCardOpacity = 0.48.obs;
+  final customSkinDarkMode = false.obs;
   final skinImageAlignX = 0.0.obs;
   final skinImageAlignY = 0.0.obs;
 
@@ -135,6 +136,20 @@ class ThemeService extends GetxService {
     final id = activeSkinId.value;
     for (final skin in allSkins) {
       if (skin.id == id) {
+        if (skin.isCustomImage) {
+          final useDark = customSkinDarkMode.value;
+          return AppSkinPreset(
+            id: skin.id,
+            label: skin.label,
+            isDark: useDark,
+            previewColor: skin.previewColor,
+            cardColor: useDark ? const Color(0xFF141820) : Colors.white,
+            cardBorderColor: useDark
+                ? const Color(0x40FFFFFF)
+                : const Color(0x4DFFFFFF),
+            imagePath: skin.imagePath,
+          );
+        }
         return skin;
       }
     }
@@ -165,6 +180,10 @@ class ThemeService extends GetxService {
     }
 
     final savedDark = _storage.read(StorageKey.dark.name) ?? false;
+    final savedCustomDark = _storage.read(StorageKey.skinCustomDarkMode.name);
+    customSkinDarkMode.value =
+        savedCustomDark is bool ? savedCustomDark : savedDark;
+
     final savedSkinId =
         (_storage.read(StorageKey.skinPresetId.name) ?? '').toString().trim();
     if (savedSkinId.isNotEmpty && allSkins.any((s) => s.id == savedSkinId)) {
@@ -187,8 +206,21 @@ class ThemeService extends GetxService {
     } else if (!_dark.value && activeSkinId.value == kPureBlackId) {
       activeSkinId.value = kPureWhiteId;
       _storage.write(StorageKey.skinPresetId.name, activeSkinId.value);
+    } else if (activeSkin.isCustomImage) {
+      customSkinDarkMode.value = _dark.value;
+      _storage.write(StorageKey.skinCustomDarkMode.name, _dark.value);
     }
     Get.changeThemeMode(themeMode);
+  }
+
+  void setCustomSkinDarkMode(bool dark) {
+    customSkinDarkMode.value = dark;
+    _storage.write(StorageKey.skinCustomDarkMode.name, dark);
+    if (activeSkin.isCustomImage) {
+      _dark.value = dark;
+      _storage.write(StorageKey.dark.name, dark);
+      Get.changeThemeMode(themeMode);
+    }
   }
 
   void selectSkin(String skinId) {
@@ -199,8 +231,10 @@ class ThemeService extends GetxService {
     final target = matches.first;
     activeSkinId.value = target.id;
     _storage.write(StorageKey.skinPresetId.name, target.id);
-    _dark.value = target.isDark;
-    _storage.write(StorageKey.dark.name, _dark.value);
+    final nextDark =
+        target.isCustomImage ? customSkinDarkMode.value : target.isDark;
+    _dark.value = nextDark;
+    _storage.write(StorageKey.dark.name, nextDark);
     Get.changeThemeMode(themeMode);
   }
 
@@ -240,6 +274,10 @@ class ThemeService extends GetxService {
       selectSkin(existing.id);
       return existing;
     }
+    // Preserve current light/dark preference when first adding a custom image.
+    customSkinDarkMode.value = _dark.value;
+    _storage.write(StorageKey.skinCustomDarkMode.name, _dark.value);
+
     final fileName = normalizedPath
         .split(RegExp(r'[/\\]'))
         .last
@@ -250,9 +288,11 @@ class ThemeService extends GetxService {
     final preset = AppSkinPreset(
       id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
       label: displayName,
-      isDark: true,
+      isDark: customSkinDarkMode.value,
       previewColor: const Color(0xFF1F242D),
-      cardColor: const Color(0xFF141820),
+      cardColor: customSkinDarkMode.value
+          ? const Color(0xFF141820)
+          : Colors.white,
       cardBorderColor: const Color(0x40FFFFFF),
       imagePath: normalizedPath,
     );
