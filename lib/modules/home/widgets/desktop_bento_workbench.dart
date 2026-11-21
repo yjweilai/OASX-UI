@@ -11,6 +11,7 @@ import 'package:oasx/modules/home/models/config_model.dart';
 import 'package:oasx/modules/home/models/home_workbench_layout.dart';
 import 'package:oasx/modules/home/widgets/desktop_config_rail.dart';
 import 'package:oasx/modules/home/widgets/game_preview_widget.dart';
+import 'package:oasx/service/game_preview_service.dart';
 import 'package:oasx/modules/home/widgets/log_center_panel.dart';
 import 'package:oasx/modules/home/widgets/statistics_panel.dart';
 import 'package:oasx/modules/home/widgets/task_catalog_panel.dart';
@@ -68,9 +69,11 @@ class DesktopBentoWorkbench extends StatefulWidget {
 class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
   static const double _kGap = 10;
   static const double _kResizerWidth = 10;
+  static const double _kMinLeftColumnWidth = 84;
   static const double _kMinColumnWidth = 210;
-  static const double _kDefaultLeftRatio = 0.24;
-  static const double _kDefaultMiddleRatio = 0.35;
+  static const double _kDefaultLeftRatio = 0.08;
+  static const double _kDefaultMiddleRatio = 0.36;
+  static const String _kColumnRatiosStorageKey = 'bento_column_ratios_v2';
 
   final GlobalKey<LogCenterPanelState> _logPanelKey =
       GlobalKey<LogCenterPanelState>();
@@ -81,6 +84,7 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
   String _taskSearchQuery = '';
   String _logLevelFilter = 'ALL';
   int _catalogReloadTick = 0;
+  bool _showCatalogSearch = false;
 
   double _leftRatio = _kDefaultLeftRatio;
   double _middleRatio = _kDefaultMiddleRatio;
@@ -103,7 +107,7 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
   }
 
   void _loadColumnRatios() {
-    final raw = _storage.read(StorageKey.bentoColumnRatios.name);
+    final raw = _storage.read(_kColumnRatiosStorageKey);
     if (raw == null) {
       return;
     }
@@ -113,7 +117,7 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
         final left = (decoded[0] as num).toDouble();
         final middle = (decoded[1] as num).toDouble();
         final right = 1.0 - left - middle;
-        if (left >= 0.15 && middle >= 0.15 && right >= 0.15) {
+        if (left >= 0.06 && middle >= 0.15 && right >= 0.15) {
           _leftRatio = left;
           _middleRatio = middle;
         }
@@ -123,7 +127,7 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
 
   void _saveColumnRatios() {
     _storage.write(
-      StorageKey.bentoColumnRatios.name,
+      _kColumnRatiosStorageKey,
       jsonEncode([_leftRatio, _middleRatio]),
     );
   }
@@ -176,6 +180,12 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                   onTogglePower: widget.onTogglePower,
                   onRenameScript: widget.onRenameScript,
                   onDeleteScript: widget.onDeleteScript,
+                  onToggleFloatingPreview: (name) {
+                    if (Get.isRegistered<GamePreviewService>()) {
+                      Get.find<GamePreviewService>()
+                          .toggleFloatingPreview(name);
+                    }
+                  },
                 ),
                 const SizedBox(width: _kGap),
                 // Main 3 resizable columns
@@ -207,6 +217,9 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                 taskName: activeTask,
               );
             }),
+            const Positioned.fill(
+              child: FloatingGamePreviewLayer(),
+            ),
           ],
         );
       },
@@ -227,11 +240,13 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
         final totalWidth = constraints.maxWidth;
         final usableWidth =
             (totalWidth - _kResizerWidth * 2).clamp(300.0, double.infinity);
+        final minLeftRatio =
+            (_kMinLeftColumnWidth / usableWidth).clamp(0.06, 0.24).toDouble();
         final minRatio =
             (_kMinColumnWidth / usableWidth).clamp(0.16, 0.32).toDouble();
 
         final safeLeft =
-            _leftRatio.clamp(minRatio, 1.0 - minRatio * 2).toDouble();
+            _leftRatio.clamp(minLeftRatio, 1.0 - minRatio * 2).toDouble();
         final safeMiddle = _middleRatio
             .clamp(minRatio, 1.0 - safeLeft - minRatio)
             .toDouble();
@@ -244,26 +259,19 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Left column: Active config + Game preview on top, flat Catalog below
+            // Left column: Full-height slim minimalist Catalog sidebar
             SizedBox(
               width: leftWidth,
-              child: Column(
-                children: [
-                  _buildTopLeftPreviewCard(context, script),
-                  const SizedBox(height: _kGap),
-                  Expanded(
-                    child: _buildCatalogCard(context, script),
-                  ),
-                ],
-              ),
+              child: _buildCatalogCard(context, script),
             ),
             _BentoColumnResizer(
               width: _kResizerWidth,
               onDragUpdate: (deltaDx) {
                 final deltaRatio = deltaDx / usableWidth;
                 final maxLeft = 1.0 - safeRight - minRatio;
-                final nextLeft =
-                    (safeLeft + deltaRatio).clamp(minRatio, maxLeft).toDouble();
+                final nextLeft = (safeLeft + deltaRatio)
+                    .clamp(minLeftRatio, maxLeft)
+                    .toDouble();
                 final actualDelta = nextLeft - safeLeft;
                 final nextMiddle = (safeMiddle - actualDelta)
                     .clamp(minRatio, 1.0 - nextLeft - minRatio)
@@ -308,181 +316,104 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
     );
   }
 
-  Widget _buildTopLeftPreviewCard(BuildContext context, ScriptModel script) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Card(
-      shape: _sharpCardShape(context),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Obx(() {
-          final isRunning = script.state.value == ScriptState.running;
-          final isLinkMode = widget.controller.isLinkModeEnabled.value;
-
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Flexible(
-                    child: StyledTypographyText(
-                      script.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    isRunning
-                        ? Icons.bolt_rounded
-                        : Icons.pause_circle_outline_rounded,
-                    size: 14,
-                    color: isRunning
-                        ? const Color(0xFF16A34A)
-                        : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 2),
-                  StyledTypographyText(
-                    isRunning ? '运行中' : '空闲中',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: isRunning
-                          ? const Color(0xFF16A34A)
-                          : scheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const Spacer(),
-                  SizedBox(
-                    width: 26,
-                    height: 26,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      iconSize: 16,
-                      tooltip: isLinkMode ? '关闭多配置联动' : '开启多配置联动',
-                      color: isLinkMode ? scheme.primary : null,
-                      onPressed: widget.controller.toggleLinkMode,
-                      icon: const Icon(Icons.link_rounded),
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: '更多操作',
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.more_horiz_rounded, size: 17),
-                    onSelected: (value) async {
-                      switch (value) {
-                        case 'reset_columns':
-                          _resetColumnRatios();
-                          break;
-                        case 'rename':
-                          await widget.onRenameScript(script.name);
-                          break;
-                        case 'delete':
-                          await widget.onDeleteScript(script.name);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem<String>(
-                        value: 'reset_columns',
-                        child: Text('重置三栏默认宽度'),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'rename',
-                        child: Text(I18n.rename.tr),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'delete',
-                        child: Text(I18n.delete.tr),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 4),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: isRunning
-                          ? const Color(0xFFC62828)
-                          : const Color(0xFF16A34A),
-                      foregroundColor: Colors.white,
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.zero,
-                      ),
-                    ),
-                    onPressed: () =>
-                        widget.onTogglePower(script.name, !isRunning),
-                    child: Text(
-                      isRunning ? '停止' : '运行',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: GamePreviewThumbnail(
-                  scriptName: script.name,
-                  squareBorder: true,
-                ),
-              ),
-            ],
-          );
-        }),
-      ),
-    );
-  }
-
   Widget _buildCatalogCard(BuildContext context, ScriptModel script) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final fg = theme.colorScheme.onSurface;
     return Card(
       shape: _sharpCardShape(context),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                StyledTypographyText(
-                  '总览',
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+      child: Column(
+        children: [
+          Obx(() {
+            final isOverviewActive =
+                widget.controller.activeTaskName.value.trim().isEmpty;
+            return InkWell(
+              onTap: () {
+                if (!isOverviewActive) {
+                  widget.onCloseTaskDrawer();
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: isOverviewActive ? fg : Colors.transparent,
+                      width: 2,
+                    ),
+                    bottom: BorderSide(
+                      color: fg.withValues(alpha: 0.14),
+                      width: 1,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    iconSize: 17,
-                    tooltip: '刷新',
-                    onPressed: () {
-                      setState(() {
-                        _catalogReloadTick++;
-                      });
-                    },
-                    icon: const Icon(Icons.refresh_rounded),
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: StyledTypographyText(
+                        '总览',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontSize: 13,
+                          fontWeight: isOverviewActive
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: fg,
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: _showCatalogSearch ? '隐藏搜索' : '搜索任务',
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _showCatalogSearch = !_showCatalogSearch;
+                          });
+                        },
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: Center(
+                            child: Icon(
+                              Icons.search_rounded,
+                              size: 14,
+                              color: _showCatalogSearch
+                                  ? fg
+                                  : fg.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: '刷新',
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _catalogReloadTick++;
+                          });
+                        },
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: Center(
+                            child: Icon(
+                              Icons.refresh_rounded,
+                              size: 14,
+                              color: fg.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            Divider(
-              height: 12,
-              color: scheme.outlineVariant.withValues(alpha: 0.5),
-            ),
-            Expanded(
+              ),
+            );
+          }),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: TaskCatalogPanel(
                 key: ValueKey<String>(
                   'desktop-catalog-${script.name}-$_catalogReloadTick',
@@ -491,6 +422,7 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                 scriptModel: script,
                 inlineParameters: false,
                 flatStyle: true,
+                showToolbar: _showCatalogSearch,
                 onOpenTask: (taskName) => widget.onOpenTask(
                   taskName,
                   HomeTaskParameterEntrySource.overview,
@@ -499,8 +431,8 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                 onQuickWait: widget.onQuickWait,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

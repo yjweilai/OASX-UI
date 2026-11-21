@@ -15,9 +15,39 @@ enum GamePreviewMode {
   windowsWindow,
 }
 
+/// Independent live preview session for a single script config (e.g. p1, p2, p3).
+class GamePreviewSession {
+  GamePreviewSession({
+    required this.scriptName,
+    required String initialWindowTitle,
+    String initialSerial = '',
+  }) {
+    windowTitle.value = initialWindowTitle;
+    serial.value = initialSerial;
+  }
+
+  final String scriptName;
+  final frameBytes = Rxn<Uint8List>();
+  final isStreaming = false.obs;
+  final isCapturing = false.obs;
+  final lastError = ''.obs;
+  final windowTitle = ''.obs;
+  final serial = ''.obs;
+
+  Timer? timer;
+  bool inFlight = false;
+  int captureGeneration = 0;
+
+  void stopTimer() {
+    timer?.cancel();
+    timer = null;
+    isStreaming.value = false;
+  }
+}
+
 /// Captures quasi-realtime game frames via local ADB (for emulators)
 /// or Windows native PrintWindow API (for PC desktop clients),
-/// with per-script window binding and automatic sync on config switch.
+/// supporting multiple independent concurrent floating preview sessions.
 class GamePreviewService extends GetxService {
   static const String _kScriptWindowMapKey = 'game_preview_window_map_v1';
 
@@ -34,12 +64,17 @@ class GamePreviewService extends GetxService {
   final windowTitle = '阴阳师'.obs;
   final availableWindows = <String>[].obs;
 
+  /// Ordered list of currently open floating preview script names.
+  /// The last entry renders on top (highest z-index).
+  final openFloatingScripts = <String>[].obs;
+
   Timer? _timer;
   bool _inFlight = false;
   int _captureGeneration = 0;
   String _activeScript = '';
   final Map<String, String> _scriptSerialCache = {};
   final Map<String, String> _scriptWindowMap = {};
+  final Map<String, GamePreviewSession> _sessions = {};
 
   @override
   void onInit() {
@@ -73,6 +108,9 @@ class GamePreviewService extends GetxService {
   @override
   void onClose() {
     stopPolling();
+    for (final session in _sessions.values) {
+      session.stopTimer();
+    }
     super.onClose();
   }
 
@@ -99,6 +137,175 @@ class GamePreviewService extends GetxService {
     _storage.write(_kScriptWindowMapKey, jsonEncode(_scriptWindowMap));
   }
 
+  GamePreviewSession sessionFor(String scriptName) {
+    final normalized = scriptName.trim();
+    return _sessions.putIfAbsent(
+      normalized,
+      () => GamePreviewSession(
+        scriptName: normalized,
+        initialWindowTitle: _resolveWindowTitleForScript(normalized),
+        initialSerial: _scriptSerialCache[normalized] ?? '',
+      ),
+    );
+  }
+
+  bool isFloatingOpen(String scriptName) {
+    return openFloatingScripts.contains(scriptName.trim());
+  }
+
+  void openFloatingPreview(String scriptName) {
+    final normalized = scriptName.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    final session = sessionFor(normalized);
+    if (!openFloatingScripts.contains(normalized)) {
+      openFloatingScripts.add(normalized);
+    } else {
+      bringFloatingToFront(normalized);
+    }
+    if (mode.value == GamePreviewMode.windowsWindow) {
+      session.windowTitle.value = _resolveWindowTitleForScript(normalized);
+      unawaited(scanWindows());
+    }
+    startSessionPolling(normalized);
+  }
+
+  void closeFloatingPreview(String scriptName) {
+    final normalized = scriptName.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    _sessions[normalized]?.stopTimer();
+    openFloatingScripts.remove(normalized);
+  }
+
+  void toggleFloatingPreview(String scriptName) {
+    final normalized = scriptName.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    if (isFloatingOpen(normalized)) {
+      closeFloatingPreview(normalized);
+    } else {
+      openFloatingPreview(normalized);
+    }
+  }
+
+  void bringFloatingToFront(String scriptName) {
+    final normalized = scriptName.trim();
+    final idx = openFloatingScripts.indexOf(normalized);
+    if (idx == -1 || idx == openFloatingScripts.length - 1) {
+      return;
+    }
+    openFloatingScripts.removeAt(idx);
+    openFloatingScripts.add(normalized);
+  }
+
+  void startSessionPolling(String scriptName) {
+    final normalized = scriptName.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    final session = sessionFor(normalized);
+    if (kIsWeb) {
+      session.lastError.value = 'Web 端不支持本地游戏画面抓取，请在 Windows 桌面端使用';
+      return;
+    }
+    if (mode.value == GamePreviewMode.windowsWindow) {
+      session.windowTitle.value = _resolveWindowTitleForScript(normalized);
+    }
+    session.isStreaming.value = true;
+    session.lastError.value = '';
+    unawaited(_bootstrapAndCaptureSession(session));
+    _restartSessionTimer(session);
+  }
+
+  void stopSessionPolling(String scriptName) {
+    final normalized = scriptName.trim();
+    _sessions[normalized]?.stopTimer();
+  }
+
+  void toggleSessionPolling(String scriptName) {
+    final session = sessionFor(scriptName);
+    if (session.isStreaming.value) {
+      stopSessionPolling(scriptName);
+    } else {
+      startSessionPolling(scriptName);
+    }
+  }
+
+  Future<void> _bootstrapAndCaptureSession(GamePreviewSession session) async {
+    if (mode.value == GamePreviewMode.adb &&
+        session.serial.value.trim().isEmpty &&
+        session.scriptName.isNotEmpty) {
+      final resolved = await resolveSerialForScript(session.scriptName);
+      if (resolved.isNotEmpty) {
+        session.serial.value = resolved;
+      }
+    }
+    await captureSessionOnce(session.scriptName);
+  }
+
+  void _restartSessionTimer(GamePreviewSession session) {
+    session.timer?.cancel();
+    session.timer = Timer.periodic(
+      Duration(seconds: intervalSeconds.value),
+      (_) {
+        if (!session.isStreaming.value) {
+          return;
+        }
+        unawaited(captureSessionOnce(session.scriptName));
+      },
+    );
+  }
+
+  Future<void> captureSessionOnce(String scriptName) async {
+    final normalized = scriptName.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    final session = sessionFor(normalized);
+    if (kIsWeb) {
+      session.lastError.value = 'Web 端不支持本地游戏画面抓取';
+      return;
+    }
+    if (session.inFlight) {
+      return;
+    }
+    final generation = session.captureGeneration;
+    session.inFlight = true;
+    session.isCapturing.value = true;
+    try {
+      final bytes = switch (mode.value) {
+        GamePreviewMode.adb => await _captureViaAdb(
+            normalized,
+            serialOverride: session.serial.value,
+          ),
+        GamePreviewMode.windowsWindow => await _captureViaWindowsWindow(
+            session.windowTitle.value.trim().isEmpty
+                ? _resolveWindowTitleForScript(normalized)
+                : session.windowTitle.value.trim(),
+          ),
+      };
+      if (generation != session.captureGeneration) {
+        return;
+      }
+      if (bytes != null && bytes.length > 16) {
+        session.frameBytes.value = bytes;
+        session.lastError.value = '';
+      }
+    } catch (error) {
+      if (generation == session.captureGeneration) {
+        session.lastError.value =
+            error.toString().replaceFirst('Exception: ', '');
+      }
+    } finally {
+      session.inFlight = false;
+      session.isCapturing.value = false;
+    }
+  }
+
   void setMode(GamePreviewMode nextMode) {
     if (mode.value == nextMode) {
       return;
@@ -115,6 +322,16 @@ class GamePreviewService extends GetxService {
     if (isStreaming.value && _activeScript.isNotEmpty) {
       unawaited(captureOnce(_activeScript));
     }
+    for (final script in openFloatingScripts) {
+      final session = sessionFor(script);
+      session.lastError.value = '';
+      if (nextMode == GamePreviewMode.windowsWindow) {
+        session.windowTitle.value = _resolveWindowTitleForScript(script);
+      }
+      if (session.isStreaming.value) {
+        unawaited(_bootstrapAndCaptureSession(session));
+      }
+    }
   }
 
   void setAdbPath(String value) {
@@ -127,8 +344,14 @@ class GamePreviewService extends GetxService {
     final normalized = value.trim();
     serial.value = normalized;
     final target = (scriptName ?? _activeScript).trim();
-    if (target.isNotEmpty && normalized.isNotEmpty) {
-      _scriptSerialCache[target] = normalized;
+    if (target.isNotEmpty) {
+      if (normalized.isNotEmpty) {
+        _scriptSerialCache[target] = normalized;
+      }
+      final session = _sessions[target];
+      if (session != null) {
+        session.serial.value = normalized;
+      }
     }
   }
 
@@ -142,7 +365,16 @@ class GamePreviewService extends GetxService {
     if (target.isNotEmpty) {
       _scriptWindowMap[target] = resolved;
       _saveScriptWindowMap();
+      final session = _sessions[target];
+      if (session != null) {
+        session.windowTitle.value = resolved;
+        session.lastError.value = '';
+      }
     }
+  }
+
+  String resolveWindowTitleForScript(String scriptName) {
+    return _resolveWindowTitleForScript(scriptName);
   }
 
   String _resolveWindowTitleForScript(String scriptName) {
@@ -154,7 +386,6 @@ class GamePreviewService extends GetxService {
     if (mapped != null && mapped.trim().isNotEmpty) {
       return mapped.trim();
     }
-    // Default to matching the window with the same name as the active config (e.g. p1, p2, p3).
     return normalized;
   }
 
@@ -165,10 +396,14 @@ class GamePreviewService extends GetxService {
     if (isStreaming.value && _activeScript.isNotEmpty) {
       _restartTimer();
     }
+    for (final session in _sessions.values) {
+      if (session.isStreaming.value) {
+        _restartSessionTimer(session);
+      }
+    }
   }
 
-  /// Syncs the active script name, switches per-script serial & window title,
-  /// clears the previous script's stale frame, and immediately captures a fresh frame.
+  /// Legacy single-script binding kept for compatibility.
   Future<void> bindScript(String scriptName) async {
     final normalized = scriptName.trim();
     if (normalized.isEmpty || normalized == _activeScript) {
@@ -179,7 +414,6 @@ class GamePreviewService extends GetxService {
     frameBytes.value = null;
     lastError.value = '';
 
-    // Always sync per-script window title so switching p1 -> p2 immediately follows p2.
     windowTitle.value = _resolveWindowTitleForScript(normalized);
 
     final cached = _scriptSerialCache[normalized];
@@ -194,7 +428,7 @@ class GamePreviewService extends GetxService {
     }
   }
 
-  /// Reads `device.serial` from the active OAS script configuration.
+  /// Reads `device.serial` from the OAS script configuration.
   Future<String> resolveSerialForScript(String scriptName) async {
     final normalized = scriptName.trim();
     if (normalized.isEmpty) {
@@ -205,11 +439,14 @@ class GamePreviewService extends GetxService {
       final found = _extractSerialFromArgs(raw);
       if (found != null && found.isNotEmpty) {
         _scriptSerialCache[normalized] = found;
-        serial.value = found;
+        if (normalized == _activeScript) {
+          serial.value = found;
+        }
+        _sessions[normalized]?.serial.value = found;
         return found;
       }
     } catch (_) {}
-    return serial.value;
+    return _scriptSerialCache[normalized] ?? serial.value;
   }
 
   String? _extractSerialFromArgs(Map<String, dynamic> args) {
@@ -302,7 +539,11 @@ class GamePreviewService extends GetxService {
     try {
       final bytes = switch (mode.value) {
         GamePreviewMode.adb => await _captureViaAdb(scriptName),
-        GamePreviewMode.windowsWindow => await _captureViaWindowsWindow(),
+        GamePreviewMode.windowsWindow => await _captureViaWindowsWindow(
+            windowTitle.value.trim().isEmpty
+                ? _resolveWindowTitleForScript(scriptName)
+                : windowTitle.value.trim(),
+          ),
       };
       if (generation != _captureGeneration) {
         return;
@@ -371,8 +612,11 @@ class GamePreviewService extends GetxService {
     return 'adb';
   }
 
-  Future<Uint8List?> _captureViaAdb(String scriptName) async {
-    var targetSerial = serial.value.trim();
+  Future<Uint8List?> _captureViaAdb(
+    String scriptName, {
+    String? serialOverride,
+  }) async {
+    var targetSerial = (serialOverride ?? serial.value).trim();
     if (targetSerial.isEmpty && scriptName.trim().isNotEmpty) {
       targetSerial = await resolveSerialForScript(scriptName);
     }
@@ -408,13 +652,12 @@ class GamePreviewService extends GetxService {
     return bytes;
   }
 
-  Future<Uint8List?> _captureViaWindowsWindow() async {
+  Future<Uint8List?> _captureViaWindowsWindow(String targetWindowTitle) async {
     if (!Platform.isWindows) {
       throw Exception('桌面版窗口抓取仅支持 Windows 系统');
     }
-    final titleKeyword = windowTitle.value.trim().isEmpty
-        ? '阴阳师'
-        : windowTitle.value.trim();
+    final titleKeyword =
+        targetWindowTitle.trim().isEmpty ? '阴阳师' : targetWindowTitle.trim();
     final escaped = titleKeyword.replaceAll("'", "''");
     final script = '''
 Add-Type -AssemblyName System.Drawing

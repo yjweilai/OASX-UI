@@ -21,6 +21,7 @@ class TaskCatalogPanel extends StatefulWidget {
     required this.onQuickWait,
     this.inlineParameters = true,
     this.flatStyle = false,
+    this.showToolbar = true,
   });
 
   final HomeDashboardController controller;
@@ -30,6 +31,7 @@ class TaskCatalogPanel extends StatefulWidget {
   final Future<void> Function(String taskName) onQuickWait;
   final bool inlineParameters;
   final bool flatStyle;
+  final bool showToolbar;
 
   @override
   State<TaskCatalogPanel> createState() => _TaskCatalogPanelState();
@@ -54,6 +56,11 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
   @override
   void didUpdateWidget(covariant TaskCatalogPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.showToolbar && !widget.showToolbar && _searchQuery.isNotEmpty) {
+      _searchController.clear();
+      _searchQuery = '';
+      _filter = HomeTaskCatalogFilter.all;
+    }
     if (oldWidget.scriptModel.name == widget.scriptModel.name) {
       return;
     }
@@ -93,10 +100,13 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
     BuildContext context,
     ConfigDragPayload? dragPayload,
   ) {
+    final activeTask = widget.controller.activeTaskName.value.trim();
     return Column(
       children: [
-        _buildToolbar(),
-        const SizedBox(height: 12),
+        if (widget.showToolbar) ...[
+          _buildToolbar(),
+          SizedBox(height: widget.flatStyle ? 6 : 12),
+        ],
         Expanded(
           child: FutureBuilder<Map<String, List<String>>>(
             future: _menuFuture,
@@ -118,12 +128,39 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
               if (sections.isEmpty) {
                 return Center(child: Text(I18n.taskNotFound.tr));
               }
+              if (widget.flatStyle) {
+                return ListView.builder(
+                  key: const PageStorageKey<String>('home-task-catalog-flat-list'),
+                  controller: _scrollController,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: sections.length,
+                  itemBuilder: (context, index) => _FlatCatalogSection(
+                    controller: widget.controller,
+                    sourceScriptName: widget.scriptModel.name,
+                    section: sections[index],
+                    isFirst: index == 0,
+                    activeTaskName: activeTask,
+                    togglingTasks: _togglingTasks,
+                    onToggleEnabled: (task, value) =>
+                        _handleToggleTaskEnabled(task, value),
+                    onOpenTask: widget.onOpenTask,
+                    onQuickRun: widget.onQuickRun,
+                    canQuickScheduleTask: (taskName) =>
+                        widget.controller.canQuickScheduleTask(
+                      widget.scriptModel,
+                      taskName,
+                    ),
+                    dragEnabled: widget.controller.canUseDesktopDragCopy,
+                    activeDragPayload: dragPayload,
+                  ),
+                );
+              }
               return ListView.separated(
                 key: const PageStorageKey<String>('home-task-catalog-list'),
                 controller: _scrollController,
                 itemCount: sections.length,
                 separatorBuilder: (context, index) => Padding(
-                  padding: EdgeInsets.symmetric(vertical: widget.flatStyle ? 0 : 10),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Divider(
                     height: 1,
                     thickness: 1,
@@ -770,4 +807,298 @@ class _CatalogTaskData {
   final String name;
   final String groupName;
   bool enabled;
+}
+
+
+class _FlatCatalogSection extends StatelessWidget {
+  const _FlatCatalogSection({
+    required this.controller,
+    required this.sourceScriptName,
+    required this.section,
+    required this.isFirst,
+    required this.activeTaskName,
+    required this.togglingTasks,
+    required this.onToggleEnabled,
+    required this.onOpenTask,
+    required this.onQuickRun,
+    required this.canQuickScheduleTask,
+    required this.dragEnabled,
+    required this.activeDragPayload,
+  });
+
+  final HomeDashboardController controller;
+  final String sourceScriptName;
+  final _CatalogSectionData section;
+  final bool isFirst;
+  final String activeTaskName;
+  final Set<String> togglingTasks;
+  final void Function(_CatalogTaskData task, bool value) onToggleEnabled;
+  final Future<void> Function(String taskName) onOpenTask;
+  final Future<void> Function(String taskName) onQuickRun;
+  final bool Function(String taskName) canQuickScheduleTask;
+  final bool dragEnabled;
+  final ConfigDragPayload? activeDragPayload;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurface;
+    final lineColor = fg.withValues(alpha: 0.16);
+    final labelColor = fg.withValues(alpha: 0.56);
+
+    final payload = controller.buildTaskCatalogGroupDragPayload(
+      sourceConfig: sourceScriptName,
+      groupName: section.groupName,
+      taskNames: section.allTaskNames,
+    );
+
+    final headerContent = Padding(
+      padding: EdgeInsets.fromLTRB(6, isFirst ? 6 : 14, 6, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(height: 0.8, color: lineColor),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: StyledTypographyText(
+              section.groupName.tr,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 10.5,
+                color: labelColor,
+                fontWeight: FontWeight.w400,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(height: 0.8, color: lineColor),
+          ),
+        ],
+      ),
+    );
+
+    final header = dragEnabled
+        ? Draggable<ConfigDragPayload>(
+            data: payload,
+            feedback: DragCopyFeedback(label: payload.displayLabel),
+            onDragStarted: () => controller.startConfigDrag(payload),
+            onDragCompleted: controller.clearConfigDrag,
+            onDraggableCanceled: (_, __) => controller.clearConfigDrag(),
+            onDragEnd: (_) => controller.clearConfigDrag(),
+            child: headerContent,
+          )
+        : headerContent;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        for (final task in section.tasks)
+          _FlatCatalogTaskRow(
+            controller: controller,
+            sourceScriptName: sourceScriptName,
+            task: task,
+            isActive: activeTaskName == task.name,
+            loading: togglingTasks.contains(task.name),
+            onToggleEnabled: (value) => onToggleEnabled(task, value),
+            onOpenTask: onOpenTask,
+            onQuickRun: onQuickRun,
+            canQuickScheduleTask: canQuickScheduleTask,
+            dragEnabled: dragEnabled,
+            activeDragPayload: activeDragPayload,
+          ),
+      ],
+    );
+  }
+}
+
+class _FlatCatalogTaskRow extends StatefulWidget {
+  const _FlatCatalogTaskRow({
+    required this.controller,
+    required this.sourceScriptName,
+    required this.task,
+    required this.isActive,
+    required this.loading,
+    required this.onToggleEnabled,
+    required this.onOpenTask,
+    required this.onQuickRun,
+    required this.canQuickScheduleTask,
+    required this.dragEnabled,
+    required this.activeDragPayload,
+  });
+
+  final HomeDashboardController controller;
+  final String sourceScriptName;
+  final _CatalogTaskData task;
+  final bool isActive;
+  final bool loading;
+  final ValueChanged<bool> onToggleEnabled;
+  final Future<void> Function(String taskName) onOpenTask;
+  final Future<void> Function(String taskName) onQuickRun;
+  final bool Function(String taskName) canQuickScheduleTask;
+  final bool dragEnabled;
+  final ConfigDragPayload? activeDragPayload;
+
+  @override
+  State<_FlatCatalogTaskRow> createState() => _FlatCatalogTaskRowState();
+}
+
+class _FlatCatalogTaskRowState extends State<_FlatCatalogTaskRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurface;
+    final task = widget.task;
+    final isScriptGroup = task.groupName == I18n.script;
+    final supportsEnable = !isScriptGroup || task.name == I18n.restart;
+    final canQuickSchedule = widget.canQuickScheduleTask(task.name);
+    final isDragging = widget.activeDragPayload?.matchesTask(
+          widget.sourceScriptName,
+          task.name,
+        ) ??
+        false;
+
+    final rowBg = isDragging
+        ? theme.colorScheme.primary.withValues(alpha: 0.16)
+        : widget.isActive
+            ? fg.withValues(alpha: 0.10)
+            : _hovered
+                ? fg.withValues(alpha: 0.08)
+                : Colors.transparent;
+
+    final showActions = _hovered || widget.loading;
+
+    Widget rowContent = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onOpenTask(task.name),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 110),
+          decoration: BoxDecoration(
+            color: rowBg,
+            border: Border(
+              left: BorderSide(
+                color: widget.isActive ? fg : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(8, 7, 4, 7),
+          child: Row(
+            children: [
+              Expanded(
+                child: StyledTypographyText(
+                  task.name.tr,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12.5,
+                    height: 1.25,
+                    fontWeight:
+                        widget.isActive ? FontWeight.w600 : FontWeight.w400,
+                    color: widget.isActive
+                        ? fg
+                        : fg.withValues(alpha: 0.90),
+                  ),
+                ),
+              ),
+              if (showActions) ...[
+                if (supportsEnable && task.enabled && canQuickSchedule)
+                  _FlatHoverIcon(
+                    icon: Icons.bolt_outlined,
+                    tooltip: I18n.homeQuickRun.tr,
+                    color: fg.withValues(alpha: 0.78),
+                    onTap: () => widget.onQuickRun(task.name),
+                  ),
+                if (supportsEnable)
+                  widget.loading
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: fg.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        )
+                      : _FlatHoverIcon(
+                          icon: task.enabled
+                              ? Icons.check_circle_outline_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          tooltip: task.enabled ? '停用任务' : '启用任务',
+                          color: task.enabled
+                              ? fg.withValues(alpha: 0.88)
+                              : fg.withValues(alpha: 0.48),
+                          onTap: () => widget.onToggleEnabled(!task.enabled),
+                        ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (widget.dragEnabled) {
+      final payload = widget.controller.buildTaskDragPayload(
+        sourceConfig: widget.sourceScriptName,
+        taskName: task.name,
+      );
+      rowContent = Draggable<ConfigDragPayload>(
+        data: payload,
+        feedback: DragCopyFeedback(label: payload.displayLabel),
+        onDragStarted: () => widget.controller.startConfigDrag(payload),
+        onDragCompleted: widget.controller.clearConfigDrag,
+        onDraggableCanceled: (_, __) => widget.controller.clearConfigDrag(),
+        onDragEnd: (_) => widget.controller.clearConfigDrag(),
+        child: rowContent,
+      );
+    }
+
+    return rowContent;
+  }
+}
+
+class _FlatHoverIcon extends StatelessWidget {
+  const _FlatHoverIcon({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: Center(
+            child: Icon(icon, size: 13.5, color: color),
+          ),
+        ),
+      ),
+    );
+  }
 }

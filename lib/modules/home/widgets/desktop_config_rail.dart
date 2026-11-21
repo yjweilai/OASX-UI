@@ -4,6 +4,7 @@ import 'package:oasx/modules/common/models/config_drag_payload.dart';
 import 'package:oasx/modules/common/widgets/styled_typography_text.dart';
 import 'package:oasx/modules/home/controllers/dashboard_controller.dart';
 import 'package:oasx/modules/home/models/config_model.dart';
+import 'package:oasx/service/game_preview_service.dart';
 import 'package:oasx/translation/i18n_content.dart';
 
 /// Slim vertical configuration rail pinned to the far left of the desktop workbench.
@@ -21,6 +22,7 @@ class DesktopConfigRail extends StatelessWidget {
     required this.onTogglePower,
     required this.onRenameScript,
     required this.onDeleteScript,
+    required this.onToggleFloatingPreview,
   });
 
   final HomeDashboardController controller;
@@ -32,12 +34,13 @@ class DesktopConfigRail extends StatelessWidget {
   final Future<void> Function(String scriptName, bool enable) onTogglePower;
   final Future<void> Function(String scriptName) onRenameScript;
   final Future<void> Function(String scriptName) onDeleteScript;
+  final ValueChanged<String> onToggleFloatingPreview;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 68,
+      width: 54,
       child: Card(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.zero,
@@ -63,11 +66,11 @@ class DesktopConfigRail extends StatelessWidget {
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 8,
+                    horizontal: 4,
+                    vertical: 6,
                   ),
                   itemCount: scripts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  separatorBuilder: (_, __) => const SizedBox(height: 5),
                   itemBuilder: (context, index) {
                     final script = scripts[index];
                     final isActive = script.name == activeName;
@@ -83,6 +86,8 @@ class DesktopConfigRail extends StatelessWidget {
                           onTogglePower(script.name, enable),
                       onRename: () => onRenameScript(script.name),
                       onDelete: () => onDeleteScript(script.name),
+                      onToggleFloatingPreview: () =>
+                          onToggleFloatingPreview(script.name),
                     );
                   },
                 );
@@ -199,6 +204,7 @@ class _ConfigRailItem extends StatelessWidget {
     required this.onTogglePower,
     required this.onRename,
     required this.onDelete,
+    required this.onToggleFloatingPreview,
   });
 
   final HomeDashboardController controller;
@@ -209,6 +215,7 @@ class _ConfigRailItem extends StatelessWidget {
   final ValueChanged<bool> onTogglePower;
   final VoidCallback onRename;
   final VoidCallback onDelete;
+  final VoidCallback onToggleFloatingPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -230,6 +237,8 @@ class _ConfigRailItem extends StatelessWidget {
           final state = script.state.value;
           final isRunning = state == ScriptState.running;
           final isPendingCopy = controller.isDragCopyPendingFor(script.name);
+          final isPreviewOpen = Get.isRegistered<GamePreviewService>() &&
+              Get.find<GamePreviewService>().isFloatingOpen(script.name);
 
           final boxBg = isDropHover
               ? scheme.primary.withValues(alpha: 0.22)
@@ -271,7 +280,7 @@ class _ConfigRailItem extends StatelessWidget {
                     bottom: BorderSide(color: borderColor, width: 1),
                     left: BorderSide(
                       color: isActive ? foregroundColor : borderColor,
-                      width: isActive ? 2.5 : 1,
+                      width: isActive ? 2.0 : 1,
                     ),
                   ),
                 ),
@@ -287,19 +296,19 @@ class _ConfigRailItem extends StatelessWidget {
                             ? null
                             : () => onTogglePower(!isRunning),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          padding: const EdgeInsets.symmetric(vertical: 5),
                           child: Center(
                             child: isPendingCopy
                                 ? const SizedBox(
-                                    width: 15,
-                                    height: 15,
+                                    width: 13,
+                                    height: 13,
                                     child: CircularProgressIndicator(
-                                      strokeWidth: 1.8,
+                                      strokeWidth: 1.6,
                                     ),
                                   )
                                 : Icon(
                                     Icons.power_settings_new_rounded,
-                                    size: 16,
+                                    size: 14,
                                     color: stateColor,
                                   ),
                           ),
@@ -312,8 +321,8 @@ class _ConfigRailItem extends StatelessWidget {
                       onTap: onTap,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 11,
+                          horizontal: 2,
+                          vertical: 7,
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -332,13 +341,30 @@ class _ConfigRailItem extends StatelessWidget {
                                     : foregroundColor.withValues(alpha: 0.85),
                               ),
                             ),
-                            if (isLinked)
+                            if (isPreviewOpen || isLinked)
                               Padding(
                                 padding: const EdgeInsets.only(top: 2),
-                                child: Icon(
-                                  Icons.link_rounded,
-                                  size: 12,
-                                  color: scheme.primary,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isPreviewOpen)
+                                      Container(
+                                        width: 5,
+                                        height: 5,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Color(0xFF22C55E),
+                                        ),
+                                      ),
+                                    if (isPreviewOpen && isLinked)
+                                      const SizedBox(width: 3),
+                                    if (isLinked)
+                                      Icon(
+                                        Icons.link_rounded,
+                                        size: 11,
+                                        color: scheme.primary,
+                                      ),
+                                  ],
                                 ),
                               ),
                           ],
@@ -363,13 +389,32 @@ class _ConfigRailItem extends StatelessWidget {
     }
     final isLinkMode = controller.isLinkModeEnabled.value;
     final isLinked = controller.isScriptLinked(script.name);
+    final isPreviewOpen = Get.isRegistered<GamePreviewService>() &&
+        Get.find<GamePreviewService>().isFloatingOpen(script.name);
     final selected = await showMenu<String>(
       context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       position: RelativeRect.fromRect(
         Rect.fromLTWH(globalPos.dx, globalPos.dy, 0, 0),
         Offset.zero & overlay.size,
       ),
       items: [
+        PopupMenuItem<String>(
+          value: 'floating_preview',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isPreviewOpen
+                    ? Icons.picture_in_picture_alt_outlined
+                    : Icons.tv_rounded,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(isPreviewOpen ? '关闭悬浮预览' : '悬浮预览画面'),
+            ],
+          ),
+        ),
         if (isLinkMode)
           PopupMenuItem<String>(
             value: 'toggle_link',
@@ -386,6 +431,9 @@ class _ConfigRailItem extends StatelessWidget {
       ],
     );
     switch (selected) {
+      case 'floating_preview':
+        onToggleFloatingPreview();
+        break;
       case 'toggle_link':
         controller.setScriptLinked(script.name, !isLinked);
         break;
