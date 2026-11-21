@@ -139,6 +139,11 @@ class _TaskCatalogPanelState extends State<TaskCatalogPanel> {
                     sourceScriptName: widget.scriptModel.name,
                     section: sections[index],
                     isFirst: index == 0,
+                    expanded:
+                        _expandedGroups.contains(sections[index].groupName),
+                    forceExpanded: _searchQuery.isNotEmpty,
+                    onToggleExpanded: () =>
+                        _handleGroupToggle(sections[index].groupName),
                     activeTaskName: activeTask,
                     togglingTasks: _togglingTasks,
                     onToggleEnabled: (task, value) =>
@@ -816,6 +821,9 @@ class _FlatCatalogSection extends StatelessWidget {
     required this.sourceScriptName,
     required this.section,
     required this.isFirst,
+    required this.expanded,
+    required this.forceExpanded,
+    required this.onToggleExpanded,
     required this.activeTaskName,
     required this.togglingTasks,
     required this.onToggleEnabled,
@@ -830,6 +838,9 @@ class _FlatCatalogSection extends StatelessWidget {
   final String sourceScriptName;
   final _CatalogSectionData section;
   final bool isFirst;
+  final bool expanded;
+  final bool forceExpanded;
+  final VoidCallback onToggleExpanded;
   final String activeTaskName;
   final Set<String> togglingTasks;
   final void Function(_CatalogTaskData task, bool value) onToggleEnabled;
@@ -843,8 +854,9 @@ class _FlatCatalogSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fg = theme.colorScheme.onSurface;
-    final lineColor = fg.withValues(alpha: 0.16);
-    final labelColor = fg.withValues(alpha: 0.56);
+    final isExpanded = forceExpanded || expanded;
+    final lineColor = fg.withValues(alpha: isExpanded ? 0.22 : 0.16);
+    final labelColor = fg.withValues(alpha: isExpanded ? 0.78 : 0.58);
 
     final payload = controller.buildTaskCatalogGroupDragPayload(
       sourceConfig: sourceScriptName,
@@ -852,31 +864,42 @@ class _FlatCatalogSection extends StatelessWidget {
       taskNames: section.allTaskNames,
     );
 
-    final headerContent = Padding(
-      padding: EdgeInsets.fromLTRB(6, isFirst ? 6 : 14, 6, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(height: 0.8, color: lineColor),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: StyledTypographyText(
-              section.groupName.tr,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: 10.5,
-                color: labelColor,
-                fontWeight: FontWeight.w400,
-                letterSpacing: 0.3,
+    final headerContent = InkWell(
+      onTap: forceExpanded ? null : onToggleExpanded,
+      hoverColor: fg.withValues(alpha: 0.05),
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          6,
+          isFirst ? 10 : 12,
+          6,
+          isExpanded ? 6 : 10,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(height: 0.8, color: lineColor),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: StyledTypographyText(
+                section.groupName.tr,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 10.5,
+                  color: labelColor,
+                  fontWeight: isExpanded ? FontWeight.w500 : FontWeight.w400,
+                  letterSpacing: 0.3,
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: Container(height: 0.8, color: lineColor),
-          ),
-        ],
+            Expanded(
+              child: Container(height: 0.8, color: lineColor),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -896,20 +919,21 @@ class _FlatCatalogSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         header,
-        for (final task in section.tasks)
-          _FlatCatalogTaskRow(
-            controller: controller,
-            sourceScriptName: sourceScriptName,
-            task: task,
-            isActive: activeTaskName == task.name,
-            loading: togglingTasks.contains(task.name),
-            onToggleEnabled: (value) => onToggleEnabled(task, value),
-            onOpenTask: onOpenTask,
-            onQuickRun: onQuickRun,
-            canQuickScheduleTask: canQuickScheduleTask,
-            dragEnabled: dragEnabled,
-            activeDragPayload: activeDragPayload,
-          ),
+        if (isExpanded)
+          for (final task in section.tasks)
+            _FlatCatalogTaskRow(
+              controller: controller,
+              sourceScriptName: sourceScriptName,
+              task: task,
+              isActive: activeTaskName == task.name,
+              loading: togglingTasks.contains(task.name),
+              onToggleEnabled: (value) => onToggleEnabled(task, value),
+              onOpenTask: onOpenTask,
+              onQuickRun: onQuickRun,
+              canQuickScheduleTask: canQuickScheduleTask,
+              dragEnabled: dragEnabled,
+              activeDragPayload: activeDragPayload,
+            ),
       ],
     );
   }
