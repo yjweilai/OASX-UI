@@ -242,16 +242,18 @@ class _SkinPickerDialog extends StatelessWidget {
                                         Icons.text_fields_rounded,
                                         size: 16,
                                       ),
-                                      label: const Text('字号与加粗'),
+                                      label: const Text('字体与排版'),
                                     ),
-                                    if (!cfg.isDefault) ...[
+                                    if (!cfg.isDefault || _themeService.activeFontId.value != 'auto') ...[
                                       const SizedBox(width: 8),
                                       TextButton(
                                         style: TextButton.styleFrom(
                                           visualDensity: VisualDensity.compact,
                                         ),
-                                        onPressed:
-                                            _themeService.resetTypography,
+                                        onPressed: () {
+                                          _themeService.resetTypography();
+                                          _themeService.selectFont('auto');
+                                        },
                                         child: const Text('恢复默认'),
                                       ),
                                     ],
@@ -747,6 +749,26 @@ class _TypographySettingsDialog extends StatelessWidget {
 
   ThemeService get _themeService => Get.find<ThemeService>();
 
+  Future<void> _importFont(BuildContext context) async {
+    if (kIsWeb) {
+      Get.snackbar('提示', 'Web 端暂不支持导入本地字体文件，请在桌面端使用。');
+      return;
+    }
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['ttf', 'otf'],
+      dialogTitle: '选择字体文件 (.ttf / .otf)',
+    );
+    final path = result?.files.single.path;
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    final imported = await _themeService.importCustomFont(path);
+    if (imported == null) {
+      Get.snackbar('导入失败', '无法加载该字体文件，请确认文件格式有效（.ttf / .otf）。');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -769,7 +791,7 @@ class _TypographySettingsDialog extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            width: 440,
+            width: 460,
             decoration: BoxDecoration(
               color: panelColor,
               borderRadius: BorderRadius.circular(18),
@@ -779,6 +801,11 @@ class _TypographySettingsDialog extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Obx(() {
                 final cfg = _themeService.typographyConfig.value;
+                final activeFontId = _themeService.activeFontId.value;
+                final activeFontFamily = _themeService.activeFontFamily;
+                final fonts = _themeService.allFonts;
+                final isAllDefault = cfg.isDefault && activeFontId == 'auto';
+
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -792,7 +819,7 @@ class _TypographySettingsDialog extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '字号与加粗设置',
+                          '字体与排版设置',
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: textColor,
@@ -806,6 +833,110 @@ class _TypographySettingsDialog extends StatelessWidget {
                           onPressed: () => Navigator.of(context).pop(),
                           icon: const Icon(Icons.close_rounded, size: 20),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Font family selector + Import .ttf/.otf button
+                    Row(
+                      children: [
+                        SizedBox(
+                          width: 44,
+                          child: Text(
+                            '字体',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: mutedColor,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.06)
+                                  : Colors.black.withValues(alpha: 0.04),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: borderColor),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: fonts.any((f) => f.id == activeFontId)
+                                    ? activeFontId
+                                    : 'auto',
+                                isExpanded: true,
+                                isDense: true,
+                                dropdownColor: isDark
+                                    ? const Color(0xFF222630)
+                                    : Colors.white,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: textColor,
+                                ),
+                                items: fonts.map((font) {
+                                  return DropdownMenuItem<String>(
+                                    value: font.id,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            font.label,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontFamily: font.fontFamily,
+                                              color: textColor,
+                                            ),
+                                          ),
+                                        ),
+                                        if (font.isCustomFont)
+                                          Text(
+                                            '自定义',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: mutedColor,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    _themeService.selectFont(val);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                          ),
+                          onPressed: () => _importFont(context),
+                          icon: const Icon(Icons.upload_file_rounded, size: 16),
+                          label: const Text('导入'),
+                        ),
+                        if (fonts.any(
+                          (f) => f.id == activeFontId && f.isCustomFont,
+                        )) ...[
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: '删除当前自定义字体',
+                            visualDensity: VisualDensity.compact,
+                            color: mutedColor,
+                            onPressed: () =>
+                                _themeService.removeCustomFont(activeFontId),
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -825,6 +956,7 @@ class _TypographySettingsDialog extends StatelessWidget {
                         '预览：今日运行 8h 37m · INFO 12:03 探索',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: textColor,
+                          fontFamily: activeFontFamily,
                         ),
                       ),
                     ),
@@ -865,9 +997,12 @@ class _TypographySettingsDialog extends StatelessWidget {
                     Row(
                       children: [
                         TextButton.icon(
-                          onPressed: cfg.isDefault
+                          onPressed: isAllDefault
                               ? null
-                              : _themeService.resetTypography,
+                              : () {
+                                  _themeService.resetTypography();
+                                  _themeService.selectFont('auto');
+                                },
                           icon: const Icon(Icons.restart_alt_rounded, size: 17),
                           label: const Text('恢复默认'),
                         ),

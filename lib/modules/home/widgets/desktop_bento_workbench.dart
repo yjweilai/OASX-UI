@@ -816,7 +816,6 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
   Widget _buildRightLogStatsCard(BuildContext context, ScriptModel script) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
     final statsController = _statsController;
 
     return Card(
@@ -865,34 +864,25 @@ class _DesktopBentoWorkbenchState extends State<DesktopBentoWorkbench> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                   if (isLogs) ...[
-                    Container(
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.09)
-                            : Colors.black.withValues(alpha: 0.04),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.55),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SegmentButton(
+                          label: '信息',
+                          selected: _logLevelFilter != 'ERROR_GROUP',
+                          onTap: () => setState(() {
+                            _logLevelFilter = 'ALL';
+                          }),
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _SegmentButton(
-                            label: '信息',
-                            selected: _logLevelFilter != 'ERROR_GROUP',
-                            onTap: () => setState(() {
-                              _logLevelFilter = 'ALL';
-                            }),
-                          ),
-                          _SegmentButton(
-                            label: '错误',
-                            selected: _logLevelFilter == 'ERROR_GROUP',
-                            onTap: () => setState(() {
-                              _logLevelFilter = 'ERROR_GROUP';
-                            }),
-                          ),
-                        ],
-                      ),
+                        const SizedBox(width: 4),
+                        _SegmentButton(
+                          label: '错误',
+                          selected: _logLevelFilter == 'ERROR_GROUP',
+                          onTap: () => setState(() {
+                            _logLevelFilter = 'ERROR_GROUP';
+                          }),
+                        ),
+                      ],
                     ),
                     const SizedBox(width: 6),
                     PopupMenuButton<String>(
@@ -1273,30 +1263,27 @@ class _RightTabPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final fg = theme.colorScheme.onSurface;
     return Material(
-      color: selected
-          ? scheme.primary.withValues(alpha: isDark ? 0.24 : 0.12)
-          : (isDark
-              ? Colors.white.withValues(alpha: 0.08)
-              : Colors.black.withValues(alpha: 0.04)),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: selected
-                  ? scheme.primary.withValues(alpha: 0.45)
-                  : scheme.outlineVariant.withValues(alpha: 0.5),
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? fg : Colors.transparent,
+                width: 2,
+              ),
             ),
           ),
           child: StyledTypographyText(
             label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: selected ? scheme.primary : null,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              color: selected ? fg : fg.withValues(alpha: 0.65),
             ),
           ),
         ),
@@ -1319,20 +1306,28 @@ class _SegmentButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        color: selected
-            ? (isDark
-                ? Colors.white.withValues(alpha: 0.20)
-                : Colors.white.withValues(alpha: 0.85))
-            : Colors.transparent,
-        child: StyledTypographyText(
-          label,
-          style: theme.textTheme.labelSmall?.copyWith(
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+    final fg = theme.colorScheme.onSurface;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? fg : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: StyledTypographyText(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              color: selected ? fg : fg.withValues(alpha: 0.65),
+            ),
           ),
         ),
       ),

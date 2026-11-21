@@ -4,11 +4,52 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:oasx/config/theme.dart';
 import 'package:oasx/modules/common/models/storage_key.dart';
 import 'package:path_provider/path_provider.dart';
+
+/// Describes a built-in system font or a user-imported custom `.ttf`/`.otf` font.
+class AppFontOption {
+  const AppFontOption({
+    required this.id,
+    required this.label,
+    required this.fontFamily,
+    this.filePath,
+  });
+
+  final String id;
+  final String label;
+  final String? fontFamily;
+  final String? filePath;
+
+  bool get isCustomFont => filePath != null && filePath!.trim().isNotEmpty;
+
+  Map<String, dynamic> toCustomJson() => {
+        'id': id,
+        'label': label,
+        'fontFamily': fontFamily ?? '',
+        'filePath': filePath ?? '',
+      };
+
+  static AppFontOption? fromCustomJson(Map<String, dynamic> json) {
+    final id = (json['id'] ?? '').toString().trim();
+    final label = (json['label'] ?? '').toString().trim();
+    final family = (json['fontFamily'] ?? '').toString().trim();
+    final path = (json['filePath'] ?? '').toString().trim();
+    if (id.isEmpty || family.isEmpty || path.isEmpty) {
+      return null;
+    }
+    return AppFontOption(
+      id: id,
+      label: label.isEmpty ? '自定义字体' : label,
+      fontFamily: family,
+      filePath: path,
+    );
+  }
+}
 
 /// Stores independent font scale & bold settings for CJK, Latin, and digits.
 class AppTypographyConfig {
@@ -168,6 +209,16 @@ class ThemeService extends GetxService {
   static const String kAuroraId = 'aurora';
   static const String kTwilightBlueId = 'twilight_blue';
 
+  static const List<AppFontOption> builtInFonts = [
+    AppFontOption(id: 'auto', label: '默认（跟随系统）', fontFamily: null),
+    AppFontOption(id: 'yahei', label: '微软雅黑', fontFamily: 'Microsoft YaHei'),
+    AppFontOption(id: 'dengxian', label: '等线', fontFamily: 'DengXian'),
+    AppFontOption(id: 'simhei', label: '黑体', fontFamily: 'SimHei'),
+    AppFontOption(id: 'simsun', label: '宋体', fontFamily: 'SimSun'),
+    AppFontOption(id: 'kaiti', label: '楷体', fontFamily: 'KaiTi'),
+    AppFontOption(id: 'fangsong', label: '仿宋', fontFamily: 'FangSong'),
+  ];
+
   static const List<AppTextColorOption> textColorOptions = [
     AppTextColorOption(id: 'auto', label: '自动', color: null),
     AppTextColorOption(id: 'black', label: '黑', color: Color(0xFF111827)),
@@ -235,6 +286,11 @@ class ThemeService extends GetxService {
   final customSkinDarkMode = false.obs;
   final skinTextColorId = 'auto'.obs;
   final typographyConfig = const AppTypographyConfig().obs;
+  final activeFontId = 'auto'.obs;
+  final customFonts = <AppFontOption>[].obs;
+  final fontReloadToken = 0.obs;
+  final Set<String> _loadedCustomFontFamilies = <String>{};
+  Directory? _cachedFontsDir;
   final skinImageAlignX = 0.0.obs;
   final skinImageAlignY = 0.0.obs;
 
@@ -246,6 +302,20 @@ class ThemeService extends GetxService {
   ThemeMode get themeMode => isDarkMode ? ThemeMode.dark : ThemeMode.light;
 
   List<AppSkinPreset> get allSkins => [...builtInSkins, ...customSkins];
+
+  List<AppFontOption> get allFonts => [...builtInFonts, ...customFonts];
+
+  String? get activeFontFamily {
+    // Depend on fontReloadToken so SkinBackgroundShell rebuilds after async FontLoader finishes.
+    fontReloadToken.value;
+    final id = activeFontId.value;
+    for (final opt in allFonts) {
+      if (opt.id == id) {
+        return opt.fontFamily;
+      }
+    }
+    return null;
+  }
 
   Color? get activeTextColor {
     final id = skinTextColorId.value;
@@ -288,6 +358,12 @@ class ThemeService extends GetxService {
   void onInit() {
     _loadCustomSkins();
     _loadTypographyConfig();
+    _loadCustomFonts();
+    final savedFontId =
+        (_storage.read(StorageKey.skinFontFamilyId.name) ?? '').toString().trim();
+    if (savedFontId.isNotEmpty && allFonts.any((f) => f.id == savedFontId)) {
+      activeFontId.value = savedFontId;
+    }
     final savedOpacity = _storage.read(StorageKey.skinOverlayOpacity.name);
     if (savedOpacity is num) {
       skinOverlayOpacity.value = savedOpacity.toDouble().clamp(0.0, 0.85);
@@ -327,6 +403,7 @@ class ThemeService extends GetxService {
     }
     switchTheme(_dark.value);
     unawaited(_migrateExistingCustomSkins());
+    unawaited(_preloadCustomFonts());
     super.onInit();
   }
 
@@ -380,6 +457,217 @@ class ThemeService extends GetxService {
             AppTypographyConfig.fromJson(Map<String, dynamic>.from(decoded));
       }
     } catch (_) {}
+  }
+
+
+  Future<void> selectFont(String fontId) async {
+    final matches = allFonts.where((f) => f.id == fontId);
+    if (matches.isEmpty) {
+      return;
+    }
+    final target = matches.first;
+    if (target.isCustomFont) {
+      await _ensureCustomFontLoaded(target);
+    }
+    activeFontId.value = target.id;
+    _storage.write(StorageKey.skinFontFamilyId.name, target.id);
+    fontReloadToken.value++;
+  }
+
+  Future<Directory?> _resolveFontsDir() async {
+    if (kIsWeb) {
+      return null;
+    }
+    if (_cachedFontsDir != null && _cachedFontsDir!.existsSync()) {
+      return _cachedFontsDir;
+    }
+    final sep = Platform.pathSeparator;
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      try {
+        final exeDir = File(Platform.resolvedExecutable).parent;
+        final candidate = Directory('${exeDir.path}${sep}fonts');
+        if (!candidate.existsSync()) {
+          candidate.createSync(recursive: true);
+        }
+        final probe = File('${candidate.path}$sep.write_test');
+        probe.writeAsStringSync('ok');
+        probe.deleteSync();
+        _cachedFontsDir = candidate;
+        return candidate;
+      } catch (_) {}
+    }
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      final fallback = Directory('${supportDir.path}${sep}fonts');
+      if (!fallback.existsSync()) {
+        fallback.createSync(recursive: true);
+      }
+      _cachedFontsDir = fallback;
+      return fallback;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> _copyIntoManagedFontsDir(String sourcePath) async {
+    if (kIsWeb) {
+      return sourcePath;
+    }
+    final sourceFile = File(sourcePath);
+    if (!sourceFile.existsSync()) {
+      return sourcePath;
+    }
+    final fontsDir = await _resolveFontsDir();
+    if (fontsDir == null) {
+      return sourcePath;
+    }
+    if (sourceFile.parent.path.toLowerCase() == fontsDir.path.toLowerCase()) {
+      return sourcePath;
+    }
+    final baseName = sourcePath.split(RegExp(r'[/\\]')).last;
+    final dotIndex = baseName.lastIndexOf('.');
+    final ext = dotIndex > 0 ? baseName.substring(dotIndex) : '.ttf';
+    final rawStem = dotIndex > 0 ? baseName.substring(0, dotIndex) : baseName;
+    final safeStem = rawStem.replaceAll(RegExp(r'[^\w\u4e00-\u9fa5-]'), '_');
+    final fileName =
+        'font_${DateTime.now().millisecondsSinceEpoch}_$safeStem$ext';
+    final destPath = '${fontsDir.path}${Platform.pathSeparator}$fileName';
+    try {
+      await sourceFile.copy(destPath);
+      return destPath;
+    } catch (_) {
+      return sourcePath;
+    }
+  }
+
+  Future<bool> _ensureCustomFontLoaded(AppFontOption font) async {
+    if (kIsWeb || !font.isCustomFont || font.fontFamily == null) {
+      return false;
+    }
+    final family = font.fontFamily!;
+    if (_loadedCustomFontFamilies.contains(family)) {
+      return true;
+    }
+    try {
+      final file = File(font.filePath!);
+      if (!file.existsSync()) {
+        return false;
+      }
+      final bytes = await file.readAsBytes();
+      final loader = FontLoader(family);
+      loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+      await loader.load();
+      _loadedCustomFontFamilies.add(family);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _preloadCustomFonts() async {
+    if (kIsWeb || customFonts.isEmpty) {
+      return;
+    }
+    var loadedAny = false;
+    for (final font in customFonts.toList()) {
+      if (await _ensureCustomFontLoaded(font)) {
+        loadedAny = true;
+      }
+    }
+    if (loadedAny) {
+      fontReloadToken.value++;
+    }
+  }
+
+  Future<AppFontOption?> importCustomFont(String path) async {
+    final normalizedPath = path.trim();
+    if (normalizedPath.isEmpty || kIsWeb) {
+      return null;
+    }
+    if (!File(normalizedPath).existsSync()) {
+      return null;
+    }
+    final fileName = normalizedPath
+        .split(RegExp(r'[/\\]'))
+        .last
+        .replaceAll(RegExp(r'\.[^.]+$'), '');
+    final displayName = fileName.isEmpty ? '自定义字体' : fileName;
+    final storedPath = await _copyIntoManagedFontsDir(normalizedPath);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final option = AppFontOption(
+      id: 'custom_font_$ts',
+      label: displayName,
+      fontFamily: 'OasxCustomFont_$ts',
+      filePath: storedPath,
+    );
+    final ok = await _ensureCustomFontLoaded(option);
+    if (!ok) {
+      return null;
+    }
+    customFonts.add(option);
+    _saveCustomFonts();
+    await selectFont(option.id);
+    return option;
+  }
+
+  void removeCustomFont(String id) {
+    final removed = customFonts.where((f) => f.id == id).toList();
+    customFonts.removeWhere((f) => f.id == id);
+    _saveCustomFonts();
+    if (activeFontId.value == id) {
+      unawaited(selectFont('auto'));
+    }
+    if (!kIsWeb && removed.isNotEmpty) {
+      unawaited(_deleteManagedFontFile(removed.first.filePath));
+    }
+  }
+
+  Future<void> _deleteManagedFontFile(String? filePath) async {
+    if (filePath == null || filePath.trim().isEmpty) {
+      return;
+    }
+    final fontsDir = await _resolveFontsDir();
+    if (fontsDir == null) {
+      return;
+    }
+    try {
+      final file = File(filePath);
+      if (file.existsSync() &&
+          file.parent.path.toLowerCase() == fontsDir.path.toLowerCase()) {
+        await file.delete();
+      }
+    } catch (_) {}
+  }
+
+  void _loadCustomFonts() {
+    final raw = _storage.read(StorageKey.customFonts.name);
+    if (raw == null) {
+      return;
+    }
+    try {
+      final decoded = raw is String ? jsonDecode(raw) : raw;
+      if (decoded is! List) {
+        return;
+      }
+      final loaded = <AppFontOption>[];
+      for (final item in decoded) {
+        if (item is Map) {
+          final parsed =
+              AppFontOption.fromCustomJson(Map<String, dynamic>.from(item));
+          if (parsed != null) {
+            loaded.add(parsed);
+          }
+        }
+      }
+      customFonts.assignAll(loaded);
+    } catch (_) {}
+  }
+
+  void _saveCustomFonts() {
+    _storage.write(
+      StorageKey.customFonts.name,
+      jsonEncode(customFonts.map((f) => f.toCustomJson()).toList()),
+    );
   }
 
   void setSkinTextColor(String colorId) {

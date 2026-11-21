@@ -7,6 +7,8 @@ import 'package:oasx/modules/home/models/config_model.dart';
 import 'package:oasx/translation/i18n_content.dart';
 
 /// Slim vertical configuration rail pinned to the far left of the desktop workbench.
+/// Each config has its own sharp-bordered box with a horizontal hairline separating
+/// the top power toggle zone from the larger bottom config-switch zone.
 class DesktopConfigRail extends StatelessWidget {
   const DesktopConfigRail({
     super.key,
@@ -35,7 +37,7 @@ class DesktopConfigRail extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 60,
+      width: 68,
       child: Card(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.zero,
@@ -60,9 +62,12 @@ class DesktopConfigRail extends StatelessWidget {
                   );
                 }
                 return ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 8,
+                  ),
                   itemCount: scripts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 4),
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
                   itemBuilder: (context, index) {
                     final script = scripts[index];
                     final isActive = script.name == activeName;
@@ -209,7 +214,7 @@ class _ConfigRailItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final foregroundColor = scheme.onSurface;
 
     return DragTarget<ConfigDragPayload>(
       onWillAcceptWithDetails: (details) => details.data.canDropOn(script.name),
@@ -226,11 +231,19 @@ class _ConfigRailItem extends StatelessWidget {
           final isRunning = state == ScriptState.running;
           final isPendingCopy = controller.isDragCopyPendingFor(script.name);
 
-          final bgColor = isDropHover
+          final boxBg = isDropHover
               ? scheme.primary.withValues(alpha: 0.22)
               : isActive
-                  ? scheme.primary.withValues(alpha: isDark ? 0.24 : 0.12)
-                  : Colors.transparent;
+                  ? foregroundColor.withValues(alpha: 0.12)
+                  : foregroundColor.withValues(alpha: 0.03);
+          final borderColor = isDropHover
+              ? scheme.primary
+              : isActive
+                  ? foregroundColor.withValues(alpha: 0.65)
+                  : scheme.outlineVariant.withValues(alpha: 0.55);
+          final dividerColor = isActive
+              ? foregroundColor.withValues(alpha: 0.30)
+              : scheme.outlineVariant.withValues(alpha: 0.45);
           final stateColor = switch (state) {
             ScriptState.running => const Color(0xFF16A34A),
             ScriptState.warning => const Color(0xFFF59E0B),
@@ -249,70 +262,90 @@ class _ConfigRailItem extends StatelessWidget {
               }
             },
             child: Material(
-              color: bgColor,
-              child: InkWell(
-                onTap: onTap,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(
-                        color: isActive ? scheme.primary : Colors.transparent,
-                        width: 3,
-                      ),
+              color: boxBg,
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: borderColor, width: 1),
+                    right: BorderSide(color: borderColor, width: 1),
+                    bottom: BorderSide(color: borderColor, width: 1),
+                    left: BorderSide(
+                      color: isActive ? foregroundColor : borderColor,
+                      width: isActive ? 2.5 : 1,
                     ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isPendingCopy)
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 1.8),
-                        )
-                      else
-                        Tooltip(
-                          message: isRunning ? I18n.stop.tr : I18n.run.tr,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => onTogglePower(!isRunning),
-                            child: Padding(
-                              padding: const EdgeInsets.all(2),
-                              child: Icon(
-                                Icons.power_settings_new_rounded,
-                                size: 18,
-                                color: stateColor,
-                              ),
-                            ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Top dedicated power switch zone
+                    Tooltip(
+                      message: isRunning ? I18n.stop.tr : I18n.run.tr,
+                      child: InkWell(
+                        onTap: isPendingCopy
+                            ? null
+                            : () => onTogglePower(!isRunning),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          child: Center(
+                            child: isPendingCopy
+                                ? const SizedBox(
+                                    width: 15,
+                                    height: 15,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.8,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.power_settings_new_rounded,
+                                    size: 16,
+                                    color: stateColor,
+                                  ),
                           ),
-                        ),
-                      const SizedBox(height: 4),
-                      StyledTypographyText(
-                        script.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight:
-                              isActive ? FontWeight.w700 : FontWeight.w500,
-                          color: isActive ? scheme.primary : null,
                         ),
                       ),
-                      if (isLinked)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Icon(
-                            Icons.link_rounded,
-                            size: 12,
-                            color: scheme.primary,
-                          ),
+                    ),
+                    Divider(height: 1, thickness: 1, color: dividerColor),
+                    // Larger bottom config-name switch zone
+                    InkWell(
+                      onTap: onTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 11,
                         ),
-                    ],
-                  ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            StyledTypographyText(
+                              script.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: isActive
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: isActive
+                                    ? foregroundColor
+                                    : foregroundColor.withValues(alpha: 0.85),
+                              ),
+                            ),
+                            if (isLinked)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Icon(
+                                  Icons.link_rounded,
+                                  size: 12,
+                                  color: scheme.primary,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

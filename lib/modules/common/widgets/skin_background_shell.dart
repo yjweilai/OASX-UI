@@ -23,6 +23,7 @@ class SkinBackgroundShell extends StatelessWidget {
       final overlayOpacity = themeService.skinOverlayOpacity.value;
       final cardOpacity = themeService.skinCardOpacity.value;
       final customTextColor = themeService.activeTextColor;
+      final customFontFamily = themeService.activeFontFamily;
       final alignX = themeService.skinImageAlignX.value;
       final alignY = themeService.skinImageAlignY.value;
       final baseTheme = Theme.of(context);
@@ -71,23 +72,30 @@ class SkinBackgroundShell extends StatelessWidget {
         ),
       );
 
-      if (customTextColor != null) {
+      if (customTextColor != null || customFontFamily != null) {
         adaptedTheme = adaptedTheme.copyWith(
           textTheme: baseTheme.textTheme.apply(
             bodyColor: customTextColor,
             displayColor: customTextColor,
+            fontFamily: customFontFamily,
           ),
           primaryTextTheme: baseTheme.primaryTextTheme.apply(
             bodyColor: customTextColor,
             displayColor: customTextColor,
+            fontFamily: customFontFamily,
           ),
-          iconTheme: baseTheme.iconTheme.copyWith(color: customTextColor),
-          inputDecorationTheme: baseTheme.inputDecorationTheme.copyWith(
-            hintStyle: TextStyle(
-              color: customTextColor.withValues(alpha: 0.65),
-            ),
-            prefixIconColor: customTextColor.withValues(alpha: 0.80),
-          ),
+          iconTheme: customTextColor != null
+              ? baseTheme.iconTheme.copyWith(color: customTextColor)
+              : baseTheme.iconTheme,
+          inputDecorationTheme: customTextColor != null
+              ? baseTheme.inputDecorationTheme.copyWith(
+                  hintStyle: TextStyle(
+                    color: customTextColor.withValues(alpha: 0.65),
+                    fontFamily: customFontFamily,
+                  ),
+                  prefixIconColor: customTextColor.withValues(alpha: 0.80),
+                )
+              : baseTheme.inputDecorationTheme,
         );
       }
 
@@ -124,9 +132,12 @@ class SkinBackgroundShell extends StatelessWidget {
         );
       }
 
-      final foreground = customTextColor != null
+      final foreground = (customTextColor != null || customFontFamily != null)
           ? DefaultTextStyle.merge(
-              style: TextStyle(color: customTextColor),
+              style: TextStyle(
+                color: customTextColor,
+                fontFamily: customFontFamily,
+              ),
               child: child,
             )
           : child;
